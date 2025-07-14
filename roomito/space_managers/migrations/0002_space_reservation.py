@@ -20,7 +20,7 @@ class Migration(migrations.Migration):
                 ('name', models.CharField(max_length=100, verbose_name='نام')),
                 ('address', models.TextField(verbose_name='آدرس')),
                 ('capacity', models.IntegerField(verbose_name='ظرفیت')),
-                ('space_manager', models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.SET_NULL, to='space_managers.spacemanager', verbose_name='مدیر فضا')),
+                ('space_managers', models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.SET_NULL, to='space_managers.spacemanager', verbose_name='مدیر فضا')),
             ],
             options={
                 'verbose_name': 'فضا',

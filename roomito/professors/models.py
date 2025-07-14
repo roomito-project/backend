@@ -10,7 +10,3 @@ class Professor(models.Model):
 
     def __str__(self):
         return f"{self.first_name} {self.last_name} (Code: {self.personnel_code})"
-
-    class Meta:
-        verbose_name = "استاد"
-        verbose_name_plural = "اساتید"
