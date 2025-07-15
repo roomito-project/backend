@@ -8,7 +8,7 @@ class SpaceManager(models.Model):
     first_name = models.CharField(max_length=100, verbose_name="نام")
     last_name = models.CharField(max_length=100, verbose_name="نام خانوادگی")
     username = models.CharField(max_length=50, unique=True, verbose_name="نام کاربری") 
-    spaces = models.TextField(verbose_name="فضاها", help_text="لیست فضاها")
+    spaces = models.ManyToManyField('Space', verbose_name="فضاها", help_text="لیست فضاهای مدیریت شده")
 
     def __str__(self):
         return f"{self.first_name} {self.last_name}"
@@ -36,7 +36,8 @@ class Reservation(models.Model):
     description = models.CharField(verbose_name='توضیحات', default='بدون توضیحات')            
     status = models.CharField(max_length=20, choices=(('under_review', 'در حال بررسی شدن'), ('approved', 'تأیید شده'), ('rejected', 'رد شده')), default='under_review', verbose_name="وضعیت رزرو")
     space = models.ForeignKey(Space, on_delete=models.SET_NULL, null=True, blank=True, verbose_name="محل برگزاری")
-
+    schedule = models.OneToOneField('Schedule', on_delete=models.CASCADE, null=True, blank=True, verbose_name="زمان‌بندی رزرو", related_name='reservation_instance')
+    
     def __str__(self):
         reservee_name = self.student.first_name if self.student else self.professor.first_name if self.professor else "نامشخص"
         return f"{self.reservation_type} - {self.date} (رزروکننده: {reservee_name}, وضعیت: {self.status})"
@@ -54,8 +55,8 @@ class Schedule(models.Model):
     start_time = models.DateTimeField(verbose_name="ساعت شروع")
     end_time = models.DateTimeField(verbose_name="ساعت پایان")
     space = models.ForeignKey(Space, on_delete=models.CASCADE, verbose_name="محل برگزاری")
-    reservation = models.OneToOneField(Reservation, on_delete=models.CASCADE, verbose_name="رزرو")
-
+    reservation = models.OneToOneField(Reservation, on_delete=models.CASCADE, verbose_name="رزرو", related_name='schedule_instance')
+    
     def __str__(self):
         return f"{self.space.name} - {self.start_time} تا {self.end_time}"
 
