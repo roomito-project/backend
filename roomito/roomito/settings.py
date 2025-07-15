@@ -23,6 +23,7 @@ INSTALLED_APPS = [
     'professors',
     'space_managers',
     'rest_framework',
+    'drf_spectacular',
 ]
 
 MIDDLEWARE = [
@@ -101,3 +102,13 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 MEDIA_URL = '/media/'
 
 MEDIA_ROOT = BASE_DIR / 'media'
+
+REST_FRAMEWORK = {
+    'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
+}
+
+SPECTACULAR_SETTINGS = {
+    'TITLE': 'Roomito API',
+    'DESCRIPTION': 'APIs for space reservation system',
+    'VERSION': '1.0.0',
+}
