@@ -112,3 +112,5 @@ SPECTACULAR_SETTINGS = {
     'DESCRIPTION': 'APIs for space reservation system',
     'VERSION': '1.0.0',
 }
+
+AUTH_USER_MODEL = 'auth.User'
