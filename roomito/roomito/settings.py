@@ -22,6 +22,7 @@ INSTALLED_APPS = [
     'students',
     'professors',
     'space_managers',
+    'rest_framework',
 ]
 
 MIDDLEWARE = [
