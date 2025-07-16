@@ -1,25 +1,23 @@
 from rest_framework import serializers
 from .models import Student
-from .models import User
-
-class UserSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = User
-        fields = ['email', 'password']
+from django.contrib.auth.hashers import make_password
 
 class StudentRegistrationSerializer(serializers.ModelSerializer):
-    user = UserSerializer(required=True)
-    
-class StudentSerializer(serializers.ModelSerializer):
+    student_card_photo = serializers.ImageField(required=True)
+    password = serializers.CharField(write_only=True)
+
     class Meta:
         model = Student
-        fields = ['first_name', 'last_name', 'student_id', 'national_id', 'student_card_photo']
-        
+        fields = [
+            'email',
+            'password',
+            'first_name',
+            'last_name',
+            'student_id',
+            'national_id',
+            'student_card_photo'
+        ]
+
     def create(self, validated_data):
-        user_data = validated_data.pop('user')
-        user = User.objects.create_user(
-            email=user_data['email'],
-            password=user_data['password']
-        )
-        student = Student.objects.create(user=user, **validated_data)
-        return student        
+        validated_data['password'] = make_password(validated_data['password'])
+        return Student.objects.create(**validated_data)
