@@ -111,6 +111,15 @@ SPECTACULAR_SETTINGS = {
     'TITLE': 'Roomito API',
     'DESCRIPTION': 'APIs for space reservation system',
     'VERSION': '1.0.0',
+    'COMPONENT_SPLIT_REQUEST': True,
 }
 
 AUTH_USER_MODEL = 'auth.User'
+
+EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
+EMAIL_HOST = 'smtp.gmail.com'
+EMAIL_PORT = 587
+EMAIL_USE_TLS = True
+EMAIL_HOST_USER = 'mahyajfri37@gmail.com'  
+EMAIL_HOST_PASSWORD = 'elbr voub wkgw oqwy'
+DEFAULT_FROM_EMAIL = 'mahyajfri37@gmail.com'
