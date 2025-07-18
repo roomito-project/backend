@@ -1,145 +1,79 @@
-import random
-from django.core.mail import send_mail
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
-from drf_spectacular.utils import extend_schema, OpenApiExample, OpenApiTypes
+from django.contrib.auth.models import User
+from django.core.mail import send_mail
+from django.utils.crypto import get_random_string
+from drf_spectacular.utils import extend_schema
 from .models import Professor
-from django.contrib.auth.hashers import make_password
-from django.db import models
-from django.utils import timezone
-from datetime import timedelta
+from .serializers import ProfessorRegisterSerializer, ProfessorVerifySerializer
 
 class ProfessorRegisterView(APIView):
     @extend_schema(
-        request={
-            "application/json": {
-                "type": "object",
-                "properties": {
-                    "first_name": {"type": "string"},
-                    "last_name": {"type": "string"},
-                    "personnel_code": {"type": "string"},
-                    "national_id": {"type": "string"},
-                    "password": {"type": "string"},
-                },
-                "required": ["first_name", "last_name", "personnel_code", "national_id", "password"]
-            }
-        },
-        responses={201: OpenApiTypes.STR},
-        examples=[
-            OpenApiExample(
-                'درخواست نمونه',
-                value={
-                    "first_name": "mahya",
-                    "last_name": "jafari",
-                    "personnel_code": "123456",
-                    "national_id": "0012345678",
-                    "password": "securePass123"
-                },
-                request_only=True
-            ),
-        ]
+        request=ProfessorRegisterSerializer,
+        responses={200: dict, 400: dict}
     )
     def post(self, request):
-        data = request.data
-        required_fields = ['first_name', 'last_name', 'personnel_code', 'national_id', 'password']
-        if not all(field in data and data[field] for field in required_fields):
-            return Response({"error": "همه‌ی فیلدها الزامی هستند."}, status=400)
+        serializer = ProfessorRegisterSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-        # بررسی اینکه ایمیل استاد در دیتابیس موجود باشد
-        try:
-            professor = Professor.objects.get(
-                first_name=data["first_name"],
-                last_name=data["last_name"],
-                personnel_code=data["personnel_code"],
-                national_id=data["national_id"]
-            )
-        except Professor.DoesNotExist:
-            return Response({"error": "اطلاعات وارد شده با هیچ استادی در سیستم مطابقت ندارد."}, status=404)
-
-        if professor.is_registered:
-            return Response({"error": "این استاد قبلاً ثبت‌نام کرده است."}, status=400)
-
-        # تولید کد تأیید
-        code = random.randint(100000, 999999)
-
-        # ذخیره کد تأیید در مدل جداگانه
-        ProfessorVerificationCode.objects.update_or_create(
-            professor=professor,
-            defaults={"code": code}
+        data = serializer.validated_data
+        professor = Professor.objects.get(
+            first_name=data['first_name'],
+            last_name=data['last_name'],
+            national_id=data['national_id'],
+            personnel_code=data['personnel_code']
         )
 
-        # هش کردن رمز
-        hashed_password = make_password(data["password"])
-
-        # ذخیره رمز هش شده به صورت موقت تا بعد از تأیید ایمیل ثبت نهایی شود
-        professor.hashed_password = hashed_password
+        code = get_random_string(length=6, allowed_chars='0123456789')
+        professor.verification_code = code
+        professor.set_password(data['password'])
         professor.save()
 
-        # ارسال ایمیل
         send_mail(
-            "کد تأیید ثبت‌نام",
-            f"کد تأیید شما: {code}",
-            "mahyajfri37@gmail.com",  # حتماً در تنظیمات Django تنظیمش کن
-            [professor.email],
-            fail_silently=False,
+            subject="کد تأیید ثبت‌نام",
+            message=f"کد تأیید شما: {code}",
+            from_email="mahyajfri37@gmail.com",
+            recipient_list=[professor.email],
+            fail_silently=False
         )
 
-        return Response({"message": "کد تأیید به ایمیل شما ارسال شد."}, status=201)
-    
-class ProfessorVerificationCode(models.Model):
-    professor = models.OneToOneField("Professor", on_delete=models.CASCADE)
-    code = models.CharField(max_length=6)
-    created_at = models.DateTimeField(auto_now_add=True)
+        return Response({"message": "کد تأیید به ایمیل ارسال شد."}, status=200)
 
-    def is_expired(self):
-        return timezone.now() > self.created_at + timedelta(minutes=10)
-    
+
 class ProfessorVerifyView(APIView):
     @extend_schema(
-        request={
-            "application/json": {
-                "type": "object",
-                "properties": {
-                    "email": {"type": "string"},
-                    "verification_code": {"type": "string"},
-                },
-                "required": ["email", "verification_code"]
-            }
-        },
-        responses={200: OpenApiTypes.STR}
+        request=ProfessorVerifySerializer,
+        responses={200: dict, 400: dict}
     )
     def post(self, request):
-        email = request.data.get("email")
-        code = request.data.get("verification_code")
+        serializer = ProfessorVerifySerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-        if not email or not code:
-            return Response({"error": "ایمیل و کد تأیید الزامی هستند."}, status=400)
+        personnel_code = serializer.validated_data['personnel_code']
+        code = serializer.validated_data['verification_code']
 
         try:
-            professor = Professor.objects.get(email=email)
+            professor = Professor.objects.get(personnel_code=personnel_code)
         except Professor.DoesNotExist:
-            return Response({"error": "استادی با این ایمیل یافت نشد."}, status=404)
+            return Response({"error": "استاد پیدا نشد."}, status=404)
 
-        try:
-            verification = ProfessorVerificationCode.objects.get(professor=professor)
-        except ProfessorVerificationCode.DoesNotExist:
-            return Response({"error": "کد تأیید برای این استاد یافت نشد."}, status=404)
+        if professor.verification_code != code:
+            return Response({"error": "کد تأیید نادرست است."}, status=400)
 
-        if verification.code != code:
-            return Response({"error": "کد تأیید اشتباه است."}, status=400)
+        if professor.is_registered:
+            return Response({"message": "این استاد قبلاً ثبت‌نام کرده است."}, status=400)
 
-        if verification.is_expired():
-            return Response({"error": "کد تأیید منقضی شده است."}, status=400)
-
-        # نهایی‌سازی ثبت‌نام
-        professor.password = professor.hashed_password
+        user = User.objects.create_user(
+            username=professor.personnel_code,
+            password=professor.password, 
+        )
+        professor.user = user
         professor.is_registered = True
-        professor.hashed_password = ""
+        professor.is_verified = True
+        professor.verification_code = None
         professor.save()
-
-        # حذف کد تأیید
-        verification.delete()
-
-        return Response({"message": "تأیید با موفقیت انجام شد."}, status=200)
-    
+        
+        return Response({"message": "ثبت‌نام با موفقیت انجام شد."}, status=200)
