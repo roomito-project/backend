@@ -32,14 +32,14 @@ class ProfessorRegisterView(APIView):
         professor.save()
 
         send_mail(
-            subject="کد تأیید ثبت‌نام",
+            subject="کد تأیید ثبت‌نام در رومیتو",
             message=f"کد تأیید شما: {code}",
             from_email="mahyajfri37@gmail.com",
             recipient_list=[professor.email],
             fail_silently=False
         )
 
-        return Response({"message": "کد تأیید به ایمیل ارسال شد."}, status=200)
+        return Response({"message": "The verification code has been sent to the email."}, status=200)
 
 
 class ProfessorVerifyView(APIView):
@@ -58,13 +58,13 @@ class ProfessorVerifyView(APIView):
         try:
             professor = Professor.objects.get(personnel_code=personnel_code)
         except Professor.DoesNotExist:
-            return Response({"error": "استاد پیدا نشد."}, status=404)
+            return Response({"error": "The professor could not be found."}, status=404)
 
         if professor.verification_code != code:
-            return Response({"error": "کد تأیید نادرست است."}, status=400)
+            return Response({"error": "The verification code is incorrect."}, status=400)
 
         if professor.is_registered:
-            return Response({"message": "این استاد قبلاً ثبت‌نام کرده است."}, status=400)
+            return Response({"message": "This professor has registered before."}, status=400)
 
         user = User.objects.create_user(
             username=professor.personnel_code,
@@ -76,4 +76,4 @@ class ProfessorVerifyView(APIView):
         professor.verification_code = None
         professor.save()
         
-        return Response({"message": "ثبت‌نام با موفقیت انجام شد."}, status=200)
+        return Response({"message": "The professor has been successfully registered."}, status=200)

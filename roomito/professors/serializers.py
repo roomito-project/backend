@@ -20,7 +20,7 @@ class ProfessorRegisterSerializer(serializers.Serializer):
                 is_registered=False
             )
         except Professor.DoesNotExist:
-            raise serializers.ValidationError("اطلاعات وارد شده با اطلاعات ثبت‌شده مطابقت ندارد.")
+            raise serializers.ValidationError("The entered information does not match the registered information.")
         return data
 
 class ProfessorVerifySerializer(serializers.Serializer):
