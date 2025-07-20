@@ -2,8 +2,11 @@ from rest_framework import serializers
 from django.contrib.auth.models import User
 from django.contrib.auth.hashers import make_password
 from .models import Student
+from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
+from rest_framework import serializers
+from django.utils.translation import gettext_lazy as _
 
-class StudentRegistrationSerializer(serializers.ModelSerializer):
+class StudentRegistrationSerializer(serializers.Serializer):
     first_name = serializers.CharField()
     last_name = serializers.CharField()
     email = serializers.EmailField()
@@ -11,18 +14,6 @@ class StudentRegistrationSerializer(serializers.ModelSerializer):
     student_id = serializers.CharField()
     national_id = serializers.CharField()
     student_card_photo = serializers.ImageField()
-
-    class Meta:
-        model = Student
-        fields = [
-            'first_name',
-            'last_name',
-            'email',
-            'password',
-            'student_id',
-            'national_id',
-            'student_card_photo',
-        ]
 
     def create(self, validated_data):
         first_name = validated_data.pop('first_name')
@@ -40,3 +31,17 @@ class StudentRegistrationSerializer(serializers.ModelSerializer):
 
         student = Student.objects.create(user=user, **validated_data)
         return student
+
+class StudentLoginSerializer(TokenObtainPairSerializer):
+    username_field = 'username' 
+
+    def validate(self, attrs):
+        data = super().validate(attrs)
+
+        if hasattr(self.user, 'student_profile'):
+            if not self.user.student_profile.is_approved:
+                raise serializers.ValidationError(_("Your student card is not yet approved."))
+        else:
+            raise serializers.ValidationError(_("User is not a student."))
+
+        return data
