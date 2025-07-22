@@ -6,7 +6,11 @@ from django.core.mail import send_mail
 from django.utils.crypto import get_random_string
 from drf_spectacular.utils import extend_schema
 from .models import Professor
-from .serializers import ProfessorRegisterSerializer, ProfessorVerifySerializer
+from .serializers import ProfessorRegisterSerializer, ProfessorVerifySerializer, ProfessorLoginSerializer
+from rest_framework_simplejwt.tokens import RefreshToken
+from django.contrib.auth import authenticate
+from drf_spectacular.utils import OpenApiExample
+from rest_framework import serializers
 
 class ProfessorRegisterView(APIView):
     @extend_schema(
@@ -77,3 +81,38 @@ class ProfessorVerifyView(APIView):
         professor.save()
         
         return Response({"message": "The professor has been successfully registered."}, status=200)
+    
+class ProfessorLoginView(APIView):
+    @extend_schema(
+        request=ProfessorLoginSerializer,
+        responses={
+            200: serializers.DictField(),
+            401: serializers.DictField(),
+        },
+        examples=[
+            OpenApiExample(
+                "Login example",
+                value={"personnel_code": "string", "password": "string"},
+                request_only=True
+            )
+        ],
+        description="Professor login using personnel code and password"
+    )
+    
+    def post(self, request):
+        serializer = ProfessorLoginSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        personnel_code = serializer.validated_data['personnel_code']
+        password = serializer.validated_data['password']
+
+        user = authenticate(username=personnel_code, password=password)
+        if user is None:
+            return Response({"error": "Invalid personnel code or password."}, status=status.HTTP_401_UNAUTHORIZED)
+
+        refresh = RefreshToken.for_user(user)
+        return Response({
+            "access": str(refresh.access_token),
+            "refresh": str(refresh),
+        }, status=status.HTTP_200_OK)    

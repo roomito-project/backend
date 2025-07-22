@@ -26,3 +26,7 @@ class ProfessorRegisterSerializer(serializers.Serializer):
 class ProfessorVerifySerializer(serializers.Serializer):
     personnel_code = serializers.CharField()
     verification_code = serializers.CharField()
+    
+class ProfessorLoginSerializer(serializers.Serializer):
+    personnel_code = serializers.CharField()
+    password = serializers.CharField(write_only=True)    
