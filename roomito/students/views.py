@@ -3,12 +3,17 @@ from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.parsers import MultiPartParser, FormParser
 from django.contrib.auth.models import User
-from django.contrib.auth.hashers import make_password
-from drf_spectacular.utils import extend_schema, OpenApiExample
-from .serializers import StudentRegistrationSerializer
+from drf_spectacular.utils import extend_schema, OpenApiExample, OpenApiResponse
 from .models import Student
 from rest_framework_simplejwt.views import TokenObtainPairView
-from .serializers import StudentLoginSerializer
+from .serializers import (
+    StudentRegistrationSerializer,
+    ErrorResponseSerializer,
+    SuccessRegistrationResponseSerializer,
+    StudentLoginSerializer,
+    TokenResponseSerializer
+)
+
 
 class StudentRegisterView(APIView):
     parser_classes = [MultiPartParser, FormParser]
@@ -16,37 +21,68 @@ class StudentRegisterView(APIView):
     @extend_schema(
         request=StudentRegistrationSerializer,
         responses={
-            201: OpenApiExample(
-                name="Success",
-                value={
-                    "message": "The student has been successfully registered. Please wait for the confirmation of the card photo.",
-                    "student_id": 42
-                },
-                response_only=True,
-                status_codes=["201"]
-            )
-        },
-        examples=[
-            OpenApiExample(
-                name="RegisterStudentExample",
-                value={
-                    "first_name": "string",
-                    "last_name": "string",
-                    "email": "user@example.com",
-                    "password": "string",
-                    "student_id": "string",
-                    "national_id": "string",
-                    "student_card_photo": "string.png"
-                },
-                request_only=True
-            )
-        ],
-        description="Student registration (using student card photo)"
+            201: OpenApiResponse(
+                response=SuccessRegistrationResponseSerializer,
+                description="Student registration successful",
+                examples=[
+                    OpenApiExample(
+                        name="RegistrationSuccess",
+                        value={
+                            "message": "The student has been successfully registered. Please wait for the confirmation of the card photo.",
+                            "student_id": 42
+                        },
+                        response_only=True
+                    )
+                ]
+            ),
+            400: OpenApiResponse(
+                response=ErrorResponseSerializer,
+                description="Invalid data or format",
+                examples=[
+                    OpenApiExample(
+                        name="InvalidData",
+                        value={"error": "One or more fields are invalid."},
+                        response_only=True
+                    )
+                ]
+            ),
+            409: OpenApiResponse(
+                response=ErrorResponseSerializer,
+                description="Duplicate email or student ID",
+                examples=[
+                    OpenApiExample(
+                        name="Conflict",
+                        value={"error": "Email or student ID already exists."},
+                        response_only=True
+                    )
+                ]
+            ),
+            500: OpenApiResponse(
+                response=ErrorResponseSerializer,
+                description="Unexpected server error",
+                examples=[
+                    OpenApiExample(
+                        name="UnexpectedError",
+                        value={"error": "An unexpected error occurred."},
+                        response_only=True
+                    )
+                ]
+            ),
+        }
     )
     def post(self, request):
         serializer = StudentRegistrationSerializer(data=request.data)
-        if serializer.is_valid():
-            data = serializer.validated_data
+        if not serializer.is_valid():
+            return Response({"error": "One or more fields are invalid."}, status=status.HTTP_400_BAD_REQUEST)
+
+        data = serializer.validated_data
+
+        try:
+            if User.objects.filter(email=data["email"]).exists():
+                return Response({"error": "Email already exists."}, status=status.HTTP_409_CONFLICT)
+
+            if User.objects.filter(username=data["student_id"]).exists() or Student.objects.filter(student_id=data["student_id"]).exclude(id__isnull=True).exists():
+                return Response({"error": "Student ID already exists."}, status=status.HTTP_409_CONFLICT)
 
             user = User.objects.create_user(
                 username=data["student_id"],
@@ -68,7 +104,39 @@ class StudentRegisterView(APIView):
                 "student_id": student.id
             }, status=status.HTTP_201_CREATED)
 
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-    
+        except Exception:
+            return Response({"error": "An unexpected error occurred."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
 class StudentLoginView(TokenObtainPairView):
     serializer_class = StudentLoginSerializer
+
+    @extend_schema(
+        request=StudentLoginSerializer,
+        responses={
+            200: OpenApiResponse(
+                response=TokenResponseSerializer,
+                description="Login successful",
+                examples=[
+                    OpenApiExample(
+                        name="LoginSuccess",
+                        value={"access": "access_token", "refresh": "refresh_token"},
+                        response_only=True
+                    )
+                ]
+            ),
+            400: OpenApiResponse(
+                response=ErrorResponseSerializer,
+                description="Invalid credentials or not approved",
+                examples=[
+                    OpenApiExample(
+                        name="LoginError",
+                        value={"error": "Your student card is not yet approved."},
+                        response_only=True
+                    )
+                ]
+            )
+        }
+    )
+    def post(self, request, *args, **kwargs):
+        return super().post(request, *args, **kwargs)
