@@ -1,27 +1,43 @@
 from rest_framework import serializers
-from .models import SpaceManager, Space, Reservation, Schedule, Event
+from django.contrib.auth.models import User
+from .models import SpaceManager
+from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 
-class SpaceManagerSerializer(serializers.ModelSerializer):
+
+class ErrorResponseSerializer(serializers.Serializer):
+    error = serializers.CharField()
+
+class SuccessResponseSerializer(serializers.Serializer):
+    message = serializers.CharField()
+
+class TokenResponseSerializer(serializers.Serializer):
+    access = serializers.CharField()
+    refresh = serializers.CharField()
+
+
+class SpaceManagerLoginSerializer(TokenObtainPairSerializer):
+    def validate(self, attrs):
+        data = super().validate(attrs)
+        user = self.user
+
+        if not hasattr(user, 'spacemanager'):
+            raise serializers.ValidationError({"error": "User is not a space manager."})
+
+        return data
+
+
+class SpaceManagerProfileSerializer(serializers.ModelSerializer):
     class Meta:
         model = SpaceManager
-        fields = '__all__'
+        fields = ['first_name', 'last_name', 'email', 'username', 'spaces']
 
-class SpaceSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = Space
-        fields = '__all__'
 
-class ReservationSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = Reservation
-        fields = '__all__'
+class SpaceManagerPasswordChangeSerializer(serializers.Serializer):
+    old_password = serializers.CharField(write_only=True)
+    new_password = serializers.CharField(write_only=True)
 
-class ScheduleSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = Schedule
-        fields = '__all__'
-
-class EventSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = Event
-        fields = '__all__'
+    def validate(self, data):
+        user = self.context['request'].user
+        if not user.check_password(data['old_password']):
+            raise serializers.ValidationError({"old_password": "Current password is incorrect."})
+        return data

@@ -1,14 +1,12 @@
-from django.urls import path, include
-from rest_framework.routers import DefaultRouter
-from .views import SpaceManagerViewSet, SpaceViewSet, ReservationViewSet, ScheduleViewSet, EventViewSet
-
-router = DefaultRouter()
-router.register(r'space-managers', SpaceManagerViewSet)
-router.register(r'spaces', SpaceViewSet)
-router.register(r'reservations', ReservationViewSet)
-router.register(r'schedules', ScheduleViewSet)
-router.register(r'events', EventViewSet)
+from django.urls import path
+from .views import (
+    SpaceManagerLoginView,
+    SpaceManagerProfileView,
+    SpaceManagerPasswordChangeView
+)
 
 urlpatterns = [
-    path('', include(router.urls)),
+    path("spacemanager/login/", SpaceManagerLoginView.as_view(), name="space-manager-login"),
+    path("spacemanager/profile/", SpaceManagerProfileView.as_view(), name="space-manager-profile"),
+    path("spacemanager/change-password/", SpaceManagerPasswordChangeView.as_view(), name="space-manager-change-password"),
 ]

@@ -57,7 +57,8 @@ class ProfessorRegisterView(APIView):
                     response_only=True
                 )]
             ),
-        }
+        },
+            description="Professor registeration"
     )
     def post(self, request):
         serializer = ProfessorRegisterSerializer(data=request.data)
@@ -136,7 +137,8 @@ class ProfessorVerifyView(APIView):
                     response_only=True
                 )]
             ),
-        }
+        },
+            description="Professor verification using personnel code and verification code"
     )
     def post(self, request):
         serializer = ProfessorVerifySerializer(data=request.data)
@@ -213,7 +215,8 @@ class ProfessorLoginView(APIView):
                     response_only=True
                 )]
             ),
-        }
+        },
+            description="Professor login using personnel code and password"
     )
     def post(self, request):
         serializer = ProfessorLoginSerializer(data=request.data)

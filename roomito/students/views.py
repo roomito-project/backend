@@ -68,7 +68,8 @@ class StudentRegisterView(APIView):
                     )
                 ]
             ),
-        }
+        },
+        description="Student registeration"
     )
     def post(self, request):
         serializer = StudentRegistrationSerializer(data=request.data)
@@ -136,7 +137,8 @@ class StudentLoginView(TokenObtainPairView):
                     )
                 ]
             )
-        }
+        },
+            description="Student login using student id and password"
     )
     def post(self, request, *args, **kwargs):
         return super().post(request, *args, **kwargs)

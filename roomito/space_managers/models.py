@@ -8,6 +8,7 @@ class SpaceManager(models.Model):
     first_name = models.CharField(max_length=100, verbose_name="نام")
     last_name = models.CharField(max_length=100, verbose_name="نام خانوادگی")
     username = models.CharField(max_length=50, unique=True, verbose_name="نام کاربری") 
+    email = models.EmailField(verbose_name="ایمیل")
     spaces = models.ManyToManyField('Space', verbose_name="فضاها", help_text="لیست فضاهای مدیریت شده")
 
     def __str__(self):
