@@ -4,13 +4,15 @@ from rest_framework.response import Response
 from rest_framework import status
 from rest_framework_simplejwt.views import TokenObtainPairView
 from drf_spectacular.utils import extend_schema, OpenApiResponse, OpenApiExample
+from .models import Space
 from .serializers import (
     ErrorResponseSerializer,
     SuccessResponseSerializer,
     TokenResponseSerializer,
     SpaceManagerProfileSerializer,
     SpaceManagerPasswordChangeSerializer,
-    SpaceManagerLoginSerializer
+    SpaceManagerLoginSerializer,
+    SpaceListSerializer
 )
 
 
@@ -134,3 +136,38 @@ class SpaceManagerPasswordChangeView(APIView):
             user.save()
             return Response({"message": "Password updated successfully."}, status=200)
         return Response(serializer.errors, status=400)
+    
+
+class SpaceListView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(
+        responses={
+            200: OpenApiExample(
+                name="RetrieveSpaceListSuccess",
+                value=[
+                    {
+                        "id": 1,
+                        "name": "string",
+                        "address": "string",
+                        "capacity": 50,
+                        "space_manager": {"first_name": "string", "last_name": "string", "email": "string@example.com"}
+                    }
+                ],
+                description="List of all available spaces with details.",
+                response_only=True    
+            ),
+            401: OpenApiExample(
+                name="Unauthorized",
+                value={"error": "Authentication credentials were not provided."},
+                description="User is not authenticated.",
+                response_only=True
+            )
+        },
+        description="Retrieve the list of all available spaces for authenticated users"
+    )
+    
+    def get(self, request):
+        spaces = Space.objects.all()
+        serializer = SpaceListSerializer(spaces, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
