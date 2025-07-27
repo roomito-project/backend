@@ -153,14 +153,14 @@ class SpaceListView(APIView):
                         value=[
                             {
                                 "id": 1,
-                                "name": "Conference Hall",
-                                "address": "123 Example Street",
+                                "name": "string",
+                                "address": "string",
                                 "capacity": 50,
                                 "space_manager": {
-                                    "first_name": "Ali",
-                                    "last_name": "Ahmadi",
-                                    "email": "ali@example.com",
-                                    "username": "ali_ahmadi",
+                                    "first_name": "string",
+                                    "last_name": "string",
+                                    "email": "string@example.com",
+                                    "username": "string",
                                     "spaces": [1]
                                 }
                             }

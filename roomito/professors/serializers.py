@@ -54,6 +54,7 @@ class ProfessorRegisterSerializer(serializers.Serializer):
 class ProfessorVerifySerializer(serializers.Serializer):
     personnel_code = serializers.CharField()
     verification_code = serializers.CharField()
+    password = serializers.CharField(write_only=True)
 
     def validate(self, data):
         if not data.get('personnel_code'):
@@ -95,3 +96,13 @@ class ProfessorLoginSerializer(serializers.Serializer):
 
         data['user'] = user
         return data
+
+
+class ResendVerificationSerializer(serializers.Serializer):
+    personnel_code = serializers.CharField()
+
+    def validate_personnel_code(self, value):
+        if not Professor.objects.filter(personnel_code=value, is_registered=False).exists():
+            raise serializers.ValidationError("No unregistered professor found with this personnel code.")
+        return value
+    

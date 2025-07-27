@@ -6,12 +6,17 @@ from django.core.mail import send_mail
 from django.utils.crypto import get_random_string
 from rest_framework_simplejwt.tokens import RefreshToken
 from drf_spectacular.utils import extend_schema, OpenApiExample, OpenApiResponse
+from django.core.cache import cache
+from rest_framework.throttling import SimpleRateThrottle
+from rest_framework.throttling import ScopedRateThrottle
+from drf_spectacular import openapi
 from .models import Professor
 from .serializers import (
     ProfessorRegisterSerializer,
     ProfessorVerifySerializer,
     ProfessorLoginSerializer,
     ErrorResponseSerializer,
+    ResendVerificationSerializer,
     SuccessResponseSerializer,
     TokenResponseSerializer
 )
@@ -77,15 +82,16 @@ class ProfessorRegisterView(APIView):
         professor.last_name = data['last_name']
         professor.national_id = data['national_id']
         professor.personnel_code = data['personnel_code']
-        professor.password = data['password'] 
         professor.verification_code = code
         professor.save()
+        cache.set(f"professor_password_{data['personnel_code']}", data['password'], timeout=600)
+
 
         try:
             send_mail(
                 subject="کد تأیید ثبت‌نام در رومیتو",
                 message=f"کد تأیید شما: {code}",
-                from_email="your_email@example.com",
+                from_email="mahyajfri37@example.com",
                 recipient_list=[professor.email],
                 fail_silently=False
             )
@@ -156,19 +162,23 @@ class ProfessorVerifyView(APIView):
 
         if professor.is_registered:
             return Response({"error": "This professor has registered before."}, status=400)
+        
+        password = cache.get(f"professor_password_{personnel_code}")
+        if not password:
+            return Response({"error": "Password expired or not found. Please register again."}, status=400)
 
         try:
             user = User.objects.create_user(
-                username=professor.personnel_code
+                username=professor.personnel_code,
+                password=password
             )
-            user.set_password(professor.password)
-            user.save()
-
             professor.user = user
             professor.is_registered = True
             professor.is_verified = True
             professor.verification_code = None
             professor.save()
+            cache.delete(f"professor_password_{personnel_code}")
+            
         except Exception:
             return Response({"error": "Failed to create user account."}, status=500)
 
@@ -233,3 +243,69 @@ class ProfessorLoginView(APIView):
             }, status=status.HTTP_200_OK)
         except Exception:
             return Response({"error": "Failed to generate token."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class ProfessorResendVerificationThrottle(SimpleRateThrottle):
+    scope = 'resend_verification'
+
+    def get_cache_key(self, request, view):
+        email = request.data.get('email')
+        if not email:
+            return None
+        return self.cache_format % {
+            'scope': self.scope,
+            'ident': email
+        }
+
+
+class ProfessorResendVerificationView(APIView):
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = 'resend_verification'  
+
+    @extend_schema(
+        request=ResendVerificationSerializer,
+        responses={
+            200: OpenApiResponse(
+                response=SuccessResponseSerializer,
+                description="Verification code resent successfully",
+                examples=[
+                    OpenApiExample(
+                        "ResendSuccess",
+                        value={"message": "A new verification code has been sent to the email."}
+                    )
+                ]
+            ),
+            400: OpenApiResponse(
+                response=ErrorResponseSerializer,
+                description="Too many attempts or invalid code"
+            )
+        }
+    )
+    def post(self, request):
+        serializer = ResendVerificationSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        personnel_code = serializer.validated_data['personnel_code']
+
+        try:
+            professor = Professor.objects.get(personnel_code=personnel_code, is_registered=False)
+        except Professor.DoesNotExist:
+            return Response({"error": "Professor not found or already registered."}, status=400)
+
+        code = get_random_string(length=6, allowed_chars='0123456789')
+        professor.verification_code = code
+        professor.save()
+
+        try:
+            send_mail(
+                subject="کد تأیید ثبت‌نام مجدد",
+                message=f"کد تأیید جدید شما: {code}",
+                from_email="mahyajfri37@gmail.com",
+                recipient_list=[professor.email],
+                fail_silently=False
+            )
+        except Exception:
+            return Response({"error": "Failed to send verification email."}, status=500)
+
+        return Response({"message": "A new verification code has been sent to the email."}, status=200)
