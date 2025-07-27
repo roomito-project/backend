@@ -4,7 +4,7 @@ from rest_framework.response import Response
 from rest_framework import status
 from rest_framework_simplejwt.views import TokenObtainPairView
 from drf_spectacular.utils import extend_schema, OpenApiResponse, OpenApiExample
-from .models import Space
+from .models import Space, Event
 from .serializers import (
     ErrorResponseSerializer,
     SuccessResponseSerializer,
@@ -12,7 +12,8 @@ from .serializers import (
     SpaceManagerProfileSerializer,
     SpaceManagerPasswordChangeSerializer,
     SpaceManagerLoginSerializer,
-    SpaceListSerializer
+    SpaceListSerializer,
+    EventSerializer
 )
 
 
@@ -143,31 +144,137 @@ class SpaceListView(APIView):
 
     @extend_schema(
         responses={
-            200: OpenApiExample(
-                name="RetrieveSpaceListSuccess",
-                value=[
-                    {
-                        "id": 1,
-                        "name": "string",
-                        "address": "string",
-                        "capacity": 50,
-                        "space_manager": {"first_name": "string", "last_name": "string", "email": "string@example.com"}
-                    }
-                ],
+            200: OpenApiResponse(
+                response=SpaceListSerializer(many=True),
                 description="List of all available spaces with details.",
-                response_only=True    
+                examples=[
+                    OpenApiExample(
+                        name="RetrieveSpaceListSuccess",
+                        value=[
+                            {
+                                "id": 1,
+                                "name": "Conference Hall",
+                                "address": "123 Example Street",
+                                "capacity": 50,
+                                "space_manager": {
+                                    "first_name": "Ali",
+                                    "last_name": "Ahmadi",
+                                    "email": "ali@example.com",
+                                    "username": "ali_ahmadi",
+                                    "spaces": [1]
+                                }
+                            }
+                        ],
+                        response_only=True
+                    )
+                ]
             ),
-            401: OpenApiExample(
-                name="Unauthorized",
-                value={"error": "Authentication credentials were not provided."},
+            401: OpenApiResponse(
+                response=ErrorResponseSerializer,
                 description="User is not authenticated.",
-                response_only=True
+                examples=[
+                    OpenApiExample(
+                        name="Unauthorized",
+                        value={"error": "Authentication credentials were not provided."},
+                        response_only=True
+                    )
+                ]
             )
         },
-        description="Retrieve the list of all available spaces for authenticated users"
+        description="Retrieve the list of all available spaces for authenticated users."
     )
     
     def get(self, request):
         spaces = Space.objects.all()
         serializer = SpaceListSerializer(spaces, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
+
+
+class EventListView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(
+        responses={
+            200: OpenApiResponse(
+                response=EventSerializer(many=True),
+                description="List of all available events with details.",
+                examples=[
+                    OpenApiExample(
+                        name="Success",
+                        value=[
+                            {
+                                "id": 1,
+                                "title": "string",
+                                "event_type": "string",
+                                "date": "2025-07-27",
+                                "space": {"id": 1, "name": "string", "address": "string", "capacity": 50},
+                                "poster": "string.jpg",
+                                "organizer": "professor",
+                                "student": None,
+                                "professor": {"first_name": "string", "last_name": "string", "email": "string@example.com"},
+                                "description": "string"
+                            }
+                        ],
+                        response_only=True
+                    )
+                ]
+            ),
+            400: OpenApiResponse(
+                response=ErrorResponseSerializer,
+                description="Data inconsistency detected (e.g., missing organizer).",
+                examples=[
+                    OpenApiExample(
+                        name="ValidationError",
+                        value={"error": "Invalid event data in database."},
+                        response_only=True
+                    )
+                ]
+            ),
+            401: OpenApiResponse(
+                response=ErrorResponseSerializer,
+                description="User is not authenticated.",
+                examples=[
+                    OpenApiExample(
+                        name="Unauthorized",
+                        value={"error": "Authentication credentials were not provided."},
+                        response_only=True
+                    )
+                ]
+            ),
+            404: OpenApiResponse(
+                response=ErrorResponseSerializer,
+                description="No events found in the database.",
+                examples=[
+                    OpenApiExample(
+                        name="NotFound",
+                        value={"error": "No events available."},
+                        response_only=True
+                    )
+                ]
+            ),
+            500: OpenApiResponse(
+                response=ErrorResponseSerializer,
+                description="Internal server error while retrieving events.",
+                examples=[
+                    OpenApiExample(
+                        name="ServerError",
+                        value={"error": "An unexpected server error occurred."},
+                        response_only=True
+                    )
+                ]
+            )
+        },
+        description="Retrieve the list of all available events for authenticated users."
+    )
+
+    def get(self, request):
+        try:
+            events = Event.objects.all()
+            if not events.exists():
+                return Response({"error": "No events available."}, status=status.HTTP_404_NOT_FOUND)
+
+            serializer = EventSerializer(events, many=True)
+            return Response(serializer.data, status=status.HTTP_200_OK)
+        except Exception as e:
+            return Response({"error": "An unexpected server error occurred."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)        
+                

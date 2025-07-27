@@ -58,7 +58,7 @@ class ProfessorRegisterView(APIView):
                 )]
             ),
         },
-            description="Professor registeration"
+        description="Professor registration"
     )
     def post(self, request):
         serializer = ProfessorRegisterSerializer(data=request.data)
@@ -68,19 +68,17 @@ class ProfessorRegisterView(APIView):
         data = serializer.validated_data
 
         try:
-            professor = Professor.objects.get(
-                first_name=data['first_name'],
-                last_name=data['last_name'],
-                national_id=data['national_id'],
-                personnel_code=data['personnel_code'],
-                is_registered=False
-            )
+            professor = Professor.objects.get(email=data['email'], is_registered=False)
         except Professor.DoesNotExist:
             return Response({"error": "Professor not found or already registered."}, status=status.HTTP_404_NOT_FOUND)
 
         code = get_random_string(length=6, allowed_chars='0123456789')
+        professor.first_name = data['first_name']
+        professor.last_name = data['last_name']
+        professor.national_id = data['national_id']
+        professor.personnel_code = data['personnel_code']
+        professor.password = data['password'] 
         professor.verification_code = code
-        professor.set_password(data['password'])
         professor.save()
 
         try:
@@ -138,7 +136,7 @@ class ProfessorVerifyView(APIView):
                 )]
             ),
         },
-            description="Professor verification using personnel code and verification code"
+        description="Professor verification using personnel code and verification code"
     )
     def post(self, request):
         serializer = ProfessorVerifySerializer(data=request.data)
@@ -161,9 +159,11 @@ class ProfessorVerifyView(APIView):
 
         try:
             user = User.objects.create_user(
-                username=professor.personnel_code,
-                password=professor.password,
+                username=professor.personnel_code
             )
+            user.set_password(professor.password)
+            user.save()
+
             professor.user = user
             professor.is_registered = True
             professor.is_verified = True
@@ -216,7 +216,7 @@ class ProfessorLoginView(APIView):
                 )]
             ),
         },
-            description="Professor login using personnel code and password"
+        description="Professor login using personnel code and password"
     )
     def post(self, request):
         serializer = ProfessorLoginSerializer(data=request.data)

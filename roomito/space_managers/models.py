@@ -5,70 +5,81 @@ from professors.models import Professor
 
 class SpaceManager(models.Model):
     user = models.OneToOneField(User, on_delete=models.CASCADE)
-    first_name = models.CharField(max_length=100, verbose_name="نام")
-    last_name = models.CharField(max_length=100, verbose_name="نام خانوادگی")
-    username = models.CharField(max_length=50, unique=True, verbose_name="نام کاربری") 
-    email = models.EmailField(verbose_name="ایمیل")
-    spaces = models.ManyToManyField('Space', verbose_name="فضاها", help_text="لیست فضاهای مدیریت شده")
+    first_name = models.CharField(max_length=100)
+    last_name = models.CharField(max_length=100)
+    username = models.CharField(max_length=50, unique=True) 
+    email = models.EmailField()
+    spaces = models.ManyToManyField('Space', help_text="managed spaces")
 
     def __str__(self):
         return f"{self.first_name} {self.last_name}"
 
 class Space(models.Model):
-    name = models.CharField(max_length=100, verbose_name="نام")
-    address = models.TextField(verbose_name="آدرس")
-    capacity = models.IntegerField(verbose_name="ظرفیت")
-    space_manager = models.ForeignKey(SpaceManager, on_delete=models.SET_NULL, null=True, blank=True, verbose_name="مدیر فضا")
+    name = models.CharField(max_length=100)
+    address = models.TextField()
+    capacity = models.IntegerField()
+    space_manager = models.ForeignKey(SpaceManager, on_delete=models.SET_NULL, null=True, blank=True)
 
     def __str__(self):
-        return f"{self.name} (ظرفیت: {self.capacity})"      
+        return f"{self.name} (capacity: {self.capacity})"      
 
 class Reservation(models.Model):
     RESERVATION_TYPES = (
-        ('event', 'رویداد'),
-        ('class', 'جلسات درسی'),
-        ('gathering', 'جلسات دورهمی'),
+        ('event', 'Event'),
+        ('class', 'Class'),
+        ('gathering', 'Gathering'),
     )
-    reservation_type = models.CharField(max_length=20, choices=RESERVATION_TYPES, verbose_name="نوع رزرو")
-    date = models.DateField(verbose_name="تاریخ")
-    reservee_type = models.CharField(max_length=20, choices=(('student', 'دانشجو'), ('professor', 'استاد')), verbose_name="رزروکننده")
-    student = models.ForeignKey(Student, on_delete=models.SET_NULL, null=True, blank=True, verbose_name="دانجوی رزروکننده")
-    professor = models.ForeignKey(Professor, on_delete=models.SET_NULL, null=True, blank=True, verbose_name="استاد رزروکننده")
-    description = models.CharField(verbose_name='توضیحات', default='بدون توضیحات')            
-    status = models.CharField(max_length=20, choices=(('under_review', 'در حال بررسی شدن'), ('approved', 'تأیید شده'), ('rejected', 'رد شده')), default='under_review', verbose_name="وضعیت رزرو")
-    space = models.ForeignKey(Space, on_delete=models.SET_NULL, null=True, blank=True, verbose_name="محل برگزاری")
-    schedule = models.OneToOneField('Schedule', on_delete=models.CASCADE, null=True, blank=True, verbose_name="زمان‌بندی رزرو", related_name='reservation_instance')
+
+    RESERVEE_TYPES = (
+        ('student', 'Student'),
+        ('professor', 'Professor'),
+    )
+
+    STATUSES = (
+        ('under_review', 'Under Review'),
+        ('approved', 'Approved'),
+        ('rejected', 'Rejected'),
+    )
+    reservation_type = models.CharField(max_length=20, choices=RESERVATION_TYPES)
+    date = models.DateField()
+    reservee_type = models.CharField(max_length=20, choices=RESERVEE_TYPES)
+    student = models.ForeignKey(Student, on_delete=models.SET_NULL, null=True, blank=True)
+    professor = models.ForeignKey(Professor, on_delete=models.SET_NULL, null=True, blank=True)
+    description = models.CharField(default='no description')            
+    status = models.CharField(max_length=20, choices=STATUSES, default='under_review')
+    space = models.ForeignKey(Space, on_delete=models.SET_NULL, null=True, blank=True, )
+    schedule = models.OneToOneField('Schedule', on_delete=models.CASCADE, null=True, blank=True, related_name='reservation_instance')
     
     def __str__(self):
-        reservee_name = self.student.first_name if self.student else self.professor.first_name if self.professor else "نامشخص"
-        return f"{self.reservation_type} - {self.date} (رزروکننده: {reservee_name}, وضعیت: {self.status})"
+        reservee_name = self.student.first_name if self.student else self.professor.first_name if self.professor else "unknown"
+        return f"{self.reservation_type} - {self.date} (reservee: {reservee_name}, status: {self.status})"
 
     def save(self, *args, **kwargs):
         if self.student and self.professor:
-            raise ValueError("فقط می‌توانید یک دانشجو یا یک استاد به‌عنوان رزروکننده انتخاب کنید.")
+            raise ValueError("You can only choose one student or one professor as the reservee.")
         if self.reservee_type == 'student' and not self.student:
-            raise ValueError("برای نوع رزروکننده دانشجو، باید دانشجو انتخاب کنید.")
+            raise ValueError("For the student reservee type, you must select a student.")
         if self.reservee_type == 'professor' and not self.professor:
-            raise ValueError("برای نوع رزروکننده استاد، باید استاد انتخاب کنید.")
+            raise ValueError("For the type of the reservee, you must select a teacher.")
         super().save(*args, **kwargs)
     
 class Schedule(models.Model):
-    start_time = models.DateTimeField(verbose_name="ساعت شروع")
-    end_time = models.DateTimeField(verbose_name="ساعت پایان")
-    space = models.ForeignKey(Space, on_delete=models.CASCADE, verbose_name="محل برگزاری")
-    reservation = models.OneToOneField(Reservation, on_delete=models.CASCADE, verbose_name="رزرو", related_name='schedule_instance')
+    start_time = models.DateTimeField()
+    end_time = models.DateTimeField()
+    space = models.ForeignKey(Space, on_delete=models.CASCADE)
+    reservation = models.OneToOneField(Reservation, on_delete=models.CASCADE, related_name='schedule_instance')
     
     def __str__(self):
-        return f"{self.space.name} - {self.start_time} تا {self.end_time}"
+        return f"{self.space.name} - {self.start_time} till {self.end_time}"
 
     def clean(self):
         from django.core.exceptions import ValidationError
         if self.end_time <= self.start_time:
-            raise ValidationError("ساعت پایان باید بعد از ساعت شروع باشد.")
+            raise ValidationError("The end time must be after the start time.")
         existing_schedules = Schedule.objects.filter(space=self.space).exclude(id=self.id if self.id else None)
         for schedule in existing_schedules:
             if self.start_time < schedule.end_time and self.end_time > schedule.start_time:
-                raise ValidationError("این زمان با یک زمان‌بندی دیگر تداخل دارد.")
+                raise ValidationError("This time conflicts with another schedule.")
 
     def save(self, *args, **kwargs):
         self.clean()  
@@ -76,29 +87,34 @@ class Schedule(models.Model):
     
 class Event(models.Model):
     EVENT_TYPES = (
-        ('event', 'رویداد'),
-        ('class', 'جلسه درسی'),
-        ('gathering', 'جلسات دورهمی'),
+        ('event', 'Event'),
+        ('class', 'Class'),
+        ('gathering', 'Gathering'),
     )
-    title = models.CharField(max_length=200, verbose_name='عنوان')
-    event_type = models.CharField(max_length=20, choices=EVENT_TYPES, verbose_name="نوع")
-    date = models.DateField(verbose_name="تاریخ")
-    space = models.ForeignKey(Space, on_delete=models.SET_NULL, null=True, blank=True, verbose_name="محل برگزاری")
-    poster = models.ImageField(upload_to="event_posters/", null=True, blank=True,  verbose_name="پوستر")
-    organizer = models.CharField(max_length=20, choices=(('student', 'دانشجو'), ('professor', 'استاد')), verbose_name="برگزار کننده")
-    student = models.ForeignKey(Student, on_delete=models.SET_NULL, null=True, blank=True, verbose_name="دانجوی برگزارکننده")
-    professor = models.ForeignKey(Professor, on_delete=models.SET_NULL, null=True, blank=True, verbose_name="استاد برگزارکننده")
-    description = models.CharField(verbose_name='توضیحات', default='بدون توضیحات')            
+
+    ORGANIZER_TYPES = (
+        ('student', 'Student'),
+        ('professor', 'Professor'),
+    )
+    title = models.CharField(max_length=200)
+    event_type = models.CharField(max_length=20, choices=EVENT_TYPES)
+    date = models.DateField()
+    space = models.ForeignKey(Space, on_delete=models.SET_NULL, null=True, blank=True)
+    poster = models.ImageField(upload_to="event_posters/", null=True, blank=True)
+    organizer = models.CharField(max_length=20, choices=ORGANIZER_TYPES)
+    student_organizer = models.ForeignKey(Student, on_delete=models.SET_NULL, null=True, blank=True)
+    professor_organizer = models.ForeignKey(Professor, on_delete=models.SET_NULL, null=True, blank=True)
+    description = models.CharField(default='no description')            
 
     def __str__(self):
-        organizer = self.student.first_name if self.student else self.professor.first_name if self.professor else "نامشخص"
-        return f"{self.title} (برگزارکننده: {organizer})"
+        organizer = self.student_organizer.first_name if self.student_organizer else self.professor_organizer.first_name if self.professor_organizer else "unknown"
+        return f"{self.title} (organizer: {organizer})"
 
     def save(self, *args, **kwargs):
         if self.organizer == 'student' and not self.student:
-            raise ValueError("برای برگزارکننده دانشجو، باید دانشجو انتخاب کنید.")
+            raise ValueError("For the organizer, you must select a student.")
         if self.organizer == 'professor' and not self.professor:
-            raise ValueError("برای برگزارکننده استاد، باید استاد انتخاب کنید.")
+            raise ValueError("For the organizer of the master, you must choose a master.")
         if self.student and self.professor:
-            raise ValueError("فقط می‌توانید یک برگزارکننده (دانشجو یا استاد) انتخاب کنید.")
+            raise ValueError("You can only choose one organizer (student or teacher).")
         super().save(*args, **kwargs)
