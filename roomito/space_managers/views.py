@@ -3,7 +3,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework import status
 from rest_framework_simplejwt.views import TokenObtainPairView
-from drf_spectacular.utils import extend_schema, OpenApiResponse, OpenApiExample
+from drf_spectacular.utils import extend_schema, OpenApiResponse, OpenApiExample, OpenApiParameter
 from .models import Space, Event
 from .serializers import (
     ErrorResponseSerializer,
@@ -13,7 +13,8 @@ from .serializers import (
     SpaceManagerPasswordChangeSerializer,
     SpaceManagerLoginSerializer,
     SpaceListSerializer,
-    EventSerializer
+    EventSerializer,
+    EventDetailSerializer
 )
 
 
@@ -277,4 +278,58 @@ class EventListView(APIView):
             return Response(serializer.data, status=status.HTTP_200_OK)
         except Exception as e:
             return Response({"error": "An unexpected server error occurred."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)        
-                
+  
+
+class EventDetailView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(
+        parameters=[
+            OpenApiParameter(
+                name="event_id",
+                required=True,
+                type=int,
+                location=OpenApiParameter.PATH,
+            )
+        ],
+        responses={
+            200: OpenApiResponse(
+                response=EventDetailSerializer,
+                description="Detailed event data retrieved successfully.",
+            ),
+            404: OpenApiResponse(
+                response=ErrorResponseSerializer,
+                description="Event not found.",
+                examples=[
+                    OpenApiExample(
+                        name="NotFound",
+                        value={"error": "Event with this ID does not exist."},
+                        response_only=True,
+                    )
+                ]
+            ),
+            500: OpenApiResponse(
+                response=ErrorResponseSerializer,
+                description="Internal server error while retrieving events.",
+                examples=[
+                    OpenApiExample(
+                        name="ServerError",
+                        value={"error": "An unexpected server error occurred."},
+                        response_only=True
+                    )
+                ]
+            )
+        },
+        description="Retrieve detailed information of a specific event by ID (authenticated access required)."
+    )
+
+    def get(self, request, event_id):
+        try:
+            event = Event.objects.get(id=event_id)
+        except Event.DoesNotExist:
+            return Response({"error": "Event with this ID does not exist."}, status=404)
+        except Exception:
+            return Response({"error": "An unexpected server error occurred."}, status=500)
+
+        serializer = EventDetailSerializer(event)
+        return Response(serializer.data, status=200)

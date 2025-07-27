@@ -101,3 +101,37 @@ class EventSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError({"error": "Only one organizer (student or professor) can be selected."})
 
         return data
+
+
+class EventDetailSerializer(serializers.ModelSerializer):
+    organizer_name = serializers.SerializerMethodField()
+    space_name = serializers.CharField(source='space.name', default=None)
+    poster_url = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Event
+        fields = [
+            'id',
+            'title',
+            'event_type',
+            'date',
+            'space_name',
+            'poster_url',
+            'organizer',
+            'organizer_name',
+            'description'
+        ]
+
+    def get_organizer_name(self, obj):
+        if obj.organizer == 'student' and obj.student_organizer:
+            return f"{obj.student_organizer.first_name} {obj.student_organizer.last_name}"
+        elif obj.organizer == 'professor' and obj.professor_organizer:
+            return f"{obj.professor_organizer.first_name} {obj.professor_organizer.last_name}"
+        return "unknown"
+
+    def get_poster_url(self, obj):
+        if obj.poster:
+            request = self.context.get('request')
+            return request.build_absolute_uri(obj.poster.url) if request else obj.poster.url
+        return None
+    
