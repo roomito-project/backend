@@ -1,13 +1,15 @@
+from xml.dom import ValidationErr
 from django.db import models
 from django.contrib.auth.models import User
 from students.models import Student
 from professors.models import Professor
+from django.core.exceptions import ValidationError
 
 class SpaceManager(models.Model):
     user = models.OneToOneField(User, on_delete=models.CASCADE)
     first_name = models.CharField(max_length=100)
     last_name = models.CharField(max_length=100)
-    username = models.CharField(max_length=50, unique=True) 
+    username = models.CharField(max_length=50, unique=True)
     email = models.EmailField()
     spaces = models.ManyToManyField('Space', help_text="managed spaces")
 
@@ -21,7 +23,7 @@ class Space(models.Model):
     space_manager = models.ForeignKey(SpaceManager, on_delete=models.SET_NULL, null=True, blank=True)
 
     def __str__(self):
-        return f"{self.name} (capacity: {self.capacity})"      
+        return f"{self.name} (capacity: {self.capacity})"
 
 class Reservation(models.Model):
     RESERVATION_TYPES = (
@@ -45,11 +47,11 @@ class Reservation(models.Model):
     reservee_type = models.CharField(max_length=20, choices=RESERVEE_TYPES)
     student = models.ForeignKey(Student, on_delete=models.SET_NULL, null=True, blank=True)
     professor = models.ForeignKey(Professor, on_delete=models.SET_NULL, null=True, blank=True)
-    description = models.CharField(default='no description')            
+    description = models.CharField(default='no description')
     status = models.CharField(max_length=20, choices=STATUSES, default='under_review')
     space = models.ForeignKey(Space, on_delete=models.SET_NULL, null=True, blank=True, )
-    schedule = models.OneToOneField('Schedule', on_delete=models.CASCADE, null=True, blank=True, related_name='reservation_instance')
-    
+    schedule = models.OneToOneField('Schedule', on_delete=models.CASCADE, null=True, blank=True, related_name='reservation_instance')      
+
     def __str__(self):
         reservee_name = self.student.first_name if self.student else self.professor.first_name if self.professor else "unknown"
         return f"{self.reservation_type} - {self.date} (reservee: {reservee_name}, status: {self.status})"
@@ -62,29 +64,28 @@ class Reservation(models.Model):
         if self.reservee_type == 'professor' and not self.professor:
             raise ValueError("For the type of the reservee, you must select a teacher.")
         super().save(*args, **kwargs)
-    
+
 class Schedule(models.Model):
     start_time = models.DateTimeField()
     end_time = models.DateTimeField()
     space = models.ForeignKey(Space, on_delete=models.CASCADE)
     reservation = models.OneToOneField(Reservation, on_delete=models.CASCADE, related_name='schedule_instance')
-    
+
     def __str__(self):
         return f"{self.space.name} - {self.start_time} till {self.end_time}"
 
     def clean(self):
-        from django.core.exceptions import ValidationError
         if self.end_time <= self.start_time:
-            raise ValidationError("The end time must be after the start time.")
+            raise ValidationErr("The end time must be after the start time.")
         existing_schedules = Schedule.objects.filter(space=self.space).exclude(id=self.id if self.id else None)
         for schedule in existing_schedules:
             if self.start_time < schedule.end_time and self.end_time > schedule.start_time:
-                raise ValidationError("This time conflicts with another schedule.")
+                raise ValidationErr("This time conflicts with another schedule.")
 
     def save(self, *args, **kwargs):
-        self.clean()  
-        super().save(*args, **kwargs)  
-    
+        self.clean()
+        super().save(*args, **kwargs)
+
 class Event(models.Model):
     EVENT_TYPES = (
         ('event', 'Event'),
@@ -104,7 +105,7 @@ class Event(models.Model):
     organizer = models.CharField(max_length=20, choices=ORGANIZER_TYPES)
     student_organizer = models.ForeignKey(Student, on_delete=models.SET_NULL, null=True, blank=True)
     professor_organizer = models.ForeignKey(Professor, on_delete=models.SET_NULL, null=True, blank=True)
-    description = models.CharField(default='no description')            
+    description = models.CharField(default='no description')
 
     def __str__(self):
         organizer = self.student_organizer.first_name if self.student_organizer else self.professor_organizer.first_name if self.professor_organizer else "unknown"

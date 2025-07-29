@@ -65,7 +65,7 @@ DATABASES = {
         'NAME': 'roomito',
         'USER': 'mahya',
         'PASSWORD': 'qnzmb5773',
-        'HOST': 'localhost',
+        'HOST': 'db',
         'PORT': '5432',
     }
 }
