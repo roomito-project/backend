@@ -2,12 +2,6 @@
 
 Roomito is a faculty space reservation and management system developed to digitize and optimize the use of physical spaces like meeting rooms, classrooms, and auditoriums. The platform aims to eliminate the inefficiencies of traditional manual reservation processes and provides a unified solution for space booking by students, professors, staff, and academic groups.
 
-## 🧠 Project Summary
-
-**"A Smart System for Scheduling, Sharing, and Managing Faculty Spaces."**
-
-Users can easily browse available spaces and make reservations based on type, date, and availability. The system improves productivity and aligns with digital transformation goals in universities and academic institutes.
-
 ---
 
 ## ⚙️ Tech Stack
@@ -16,43 +10,8 @@ Users can easily browse available spaces and make reservations based on type, da
 - **Database:** PostgreSQL (Dockerized)
 - **Authentication:** JWT (via SimpleJWT)
 - **API Documentation:** Swagger (drf-spectacular)
-- **Frontend:** React (not included here)
 - **Containerization:** Docker & Docker Compose
 - **Python Version:** 3.11
-
----
-
-## 📁 Project Structure
-
-backend/
-├── roomito/               # Core Django project
-│   ├── settings.py        # Configuration & DB setup
-│   └── urls.py
-├── professors/            # App for professor features
-├── students/              # App for student features
-├── space_managers/        # App for space manager features
-├── manage.py
-├── Dockerfile
-├── docker-compose.yml
-└── requirements.txt
-
----
-
-## 📦 Requirements
-
-### 🐍 Python Dependencies (`requirements.txt`)
-
-asgiref==3.9.1
-Django==5.2.4
-djangorestframework==3.16.0
-djangorestframework_simplejwt==5.5.0
-psycopg2-binary==2.9.10
-PyJWT==2.9.0
-python-decouple==3.8
-sqlparse==0.5.3
-tzdata==2025.2
-Pillow==10.3.0
-drf-spectacular==0.27.1
 
 ---
 
@@ -68,12 +27,12 @@ drf-spectacular==0.27.1
 
 ### 📥 Clone the Project
 
-git clone <repo-url>
-cd backend
+* git clone <https://github.com/roomito-project/backend.git>
+* cd backend
 
 ---
 
-### ☁️ Setup with Docker (Recommended)
+### ☁️ Setup with Docker
 
 # Build and run containers
 docker-compose up --build
@@ -101,9 +60,6 @@ pip install -r requirements.txt
 
 # Run Django server
 python manage.py runserver
-
-
-Ensure your local PostgreSQL DB is running and configured to match `settings.py`.
 
 ---
 
@@ -137,30 +93,3 @@ http://127.0.0.1:8000/api/swagger/
   * `GET /api/events/list/`
   * `GET /api/spaces/list/`
   * `GET /api/events/{event_id}/`
-
----
-
-## 🧪 Testing
-
-> Not implemented yet (can be added using `pytest` or `Django TestCase` suite)
-
----
-
-## 🧾 License
-
-MIT License — feel free to use and modify for educational or internal purposes.
-
----
-
-## 👥 Contributors
-
-* Backend: Mahya Jafari
-* Frontend: \[Mohadese Baghbani]
-
----
-
-## 📌 Notes
-
-* All environment variables are configured via `settings.py`.
-* PostgreSQL container auto-creates DB with user/pass specified in `docker-compose.yml`.
-* Images uploaded for events are stored in the `media/` directory, mapped inside Docker.
