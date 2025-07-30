@@ -20,7 +20,7 @@ Roomito is a faculty space reservation and management system developed to digiti
 ### 🔧 Prerequisites
 
 * Python 3.11+
-* Docker & Docker Compose installed
+* Docker installed
 * Git installed
 
 ---
@@ -43,8 +43,6 @@ docker-compose exec web python manage.py migrate
 # Create superuser
 docker-compose exec web python manage.py createsuperuser
 
-> ✅ Database is automatically provisioned using Docker.
-
 ---
 
 ### 🐍 Local Development (Optional)
@@ -52,8 +50,8 @@ docker-compose exec web python manage.py createsuperuser
 If you prefer running the project locally:
 
 # Create virtual environment
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
+* python -m venv venv
+* venv\Scripts\activate
 
 # Install requirements
 pip install -r requirements.txt
