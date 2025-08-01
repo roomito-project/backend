@@ -4,7 +4,6 @@ from django.contrib.auth.hashers import make_password
 from django.utils.translation import gettext_lazy as _
 from django.core.exceptions import ValidationError
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
-
 from common.validators import validate_password_strength
 from .models import Student
 
@@ -16,7 +15,11 @@ class ErrorResponseSerializer(serializers.Serializer):
 class SuccessRegistrationResponseSerializer(serializers.Serializer):
     message = serializers.CharField()
     student_id = serializers.IntegerField()
-
+    
+    
+class SuccessResponseSerializer(serializers.Serializer):
+    message = serializers.CharField()
+    
 
 class TokenResponseSerializer(serializers.Serializer):
     access = serializers.CharField()
@@ -83,3 +86,41 @@ class StudentLoginSerializer(TokenObtainPairSerializer):
             raise serializers.ValidationError({"error": _("User is not a student.")})
 
         return data
+    
+
+class StudentProfileUpdateSerializer(serializers.Serializer):
+    first_name = serializers.CharField(max_length=100)
+    last_name = serializers.CharField(max_length=100)
+    student_id = serializers.CharField(max_length=20)
+    national_id = serializers.CharField(max_length=10)
+    password = serializers.CharField(write_only=True, required=False, min_length=8)    
+    
+    def validate_password(self, value):
+        validate_password_strength(value)
+        return value
+    
+    def validate_student_id(self, value):
+        student = getattr(self.context['request'].user, 'student_profile', None)
+        if Student.objects.exclude(pk=student.pk).filter(student_id=value).exists():
+            raise serializers.ValidationError("This student ID is already in use.")
+        return value
+
+    def validate_national_id(self, value):
+        student = getattr(self.context['request'].user, 'student_profile', None)
+        if Student.objects.exclude(pk=student.pk).filter(national_id=value).exists():
+            raise serializers.ValidationError("This national ID is already in use.")
+        return value
+    
+    def update(self, instance, validated_data):
+        user = instance.user
+        user.first_name = validated_data.get("first_name", user.first_name)
+        user.last_name = validated_data.get("last_name", user.last_name)
+        if 'password' in validated_data:
+            user.set_password(validated_data['password'])
+        user.save()
+        
+        instance.student_id = validated_data.get('student_id', instance.student_id)
+        instance.national_id = validated_data.get('national_id', instance.national_id)
+        instance.save()
+
+        return instance

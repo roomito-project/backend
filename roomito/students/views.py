@@ -6,12 +6,16 @@ from django.contrib.auth.models import User
 from drf_spectacular.utils import extend_schema, OpenApiExample, OpenApiResponse
 from .models import Student
 from rest_framework_simplejwt.views import TokenObtainPairView
+from rest_framework.permissions import IsAuthenticated
 from .serializers import (
     StudentRegistrationSerializer,
     ErrorResponseSerializer,
     SuccessRegistrationResponseSerializer,
     StudentLoginSerializer,
-    TokenResponseSerializer
+    TokenResponseSerializer,
+    StudentProfileUpdateSerializer,
+    SuccessResponseSerializer,
+    
 )
 
 
@@ -142,3 +146,61 @@ class StudentLoginView(TokenObtainPairView):
     )
     def post(self, request, *args, **kwargs):
         return super().post(request, *args, **kwargs)
+    
+    
+class StudentProfileUpdateView(APIView):
+    permission_classes = [IsAuthenticated]
+    
+    @extend_schema(
+        request=StudentProfileUpdateSerializer,
+        responses={
+            200: OpenApiResponse(
+                response=SuccessResponseSerializer,
+                description="Profile updated successfully.",
+                examples=[
+                    OpenApiExample(
+                        name="UpdateSuccess",
+                        value={"message": "Profile updated successfully."}
+                    )
+                ]
+            ),
+            400: OpenApiResponse(
+                response=ErrorResponseSerializer,
+                description="Invalid input or validation error.",
+                examples=[
+                    OpenApiExample(
+                        name="StudentIDError",
+                        value={"student_id": ["This student ID is already in use."]}
+                    ),
+                    OpenApiExample(
+                        name="NationalIDError",
+                        value={"national_id": ["This national ID is already in use."]}
+                    )
+                ]
+            ),
+            401: OpenApiResponse(
+                response=ErrorResponseSerializer,
+                description="Authentication credentials were not provided or invalid.",
+                examples=[
+                    OpenApiExample(
+                        name="Unauthorized",
+                        value={"detail": "Authentication credentials were not provided."}
+                    )
+                ]
+            ),
+        },
+        description="Update profile information of student"
+    )
+    
+    def patch(self, request):
+        student = request.user.student_profile
+        serializer = StudentProfileUpdateSerializer(
+            instance=student,
+            data=request.data,
+            partial=True,
+            context={'request': request}
+        )
+        if serializer.is_valid():
+            serializer.save()
+            return Response({"message": "Profile updated successfully."}, status=status.HTTP_200_OK)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)

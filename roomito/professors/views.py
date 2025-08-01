@@ -330,6 +330,7 @@ class ProfessorProfileUpdateView(APIView):
             ]
         ),
         400: OpenApiResponse(
+            response=ErrorResponseSerializer,
             description="Invalid input or validation error.",
             examples=[
                 OpenApiExample(
@@ -337,12 +338,7 @@ class ProfessorProfileUpdateView(APIView):
                     value={
                         "personnel_code": ["This personnel code is already in use."]
                     }
-                )
-            ]
-        ),
-        400: OpenApiResponse(
-            description="Invalid input or validation error.",
-            examples=[
+                ),
                 OpenApiExample(
                     name="ValidationError",
                     value={
@@ -352,6 +348,7 @@ class ProfessorProfileUpdateView(APIView):
             ]
         ),
         401: OpenApiResponse(
+            response=ErrorResponseSerializer,
             description="Authentication credentials were not provided or invalid.",
             examples=[
                 OpenApiExample(
