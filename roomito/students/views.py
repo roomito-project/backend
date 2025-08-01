@@ -175,7 +175,15 @@ class StudentProfileUpdateView(APIView):
                     OpenApiExample(
                         name="NationalIDError",
                         value={"national_id": ["This national ID is already in use."]}
-                    )
+                    ),
+                    OpenApiExample(
+                        name="MissingCurrentPassword",
+                        value={"current_password": ["Current password is required to change password."]}
+                    ),
+                    OpenApiExample(
+                        name="IncorrectCurrentPassword",
+                        value={"current_password": ["Current password is incorrect."]}
+                    ),
                 ]
             ),
             401: OpenApiResponse(
@@ -189,7 +197,7 @@ class StudentProfileUpdateView(APIView):
                 ]
             ),
         },
-        description="Update profile information of student"
+        description="Update profile information of the authenticated student"
     )
     
     def patch(self, request):

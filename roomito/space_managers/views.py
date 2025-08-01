@@ -10,11 +10,11 @@ from .serializers import (
     SuccessResponseSerializer,
     TokenResponseSerializer,
     SpaceManagerProfileSerializer,
-    SpaceManagerPasswordChangeSerializer,
     SpaceManagerLoginSerializer,
     SpaceListSerializer,
     EventSerializer,
-    EventDetailSerializer
+    EventDetailSerializer,
+    SpaceManagerProfileUpdateSerializer
 )
 
 
@@ -98,47 +98,7 @@ class SpaceManagerProfileView(APIView):
         manager = user.spacemanager
         serializer = SpaceManagerProfileSerializer(manager)
         return Response(serializer.data, status=status.HTTP_200_OK)
-
-class SpaceManagerPasswordChangeView(APIView):
-    permission_classes = [IsAuthenticated]
-
-    @extend_schema(
-        request=SpaceManagerPasswordChangeSerializer,
-        responses={
-            200: OpenApiResponse(
-                response=SuccessResponseSerializer,
-                description="Password changed successfully",
-                examples=[
-                    OpenApiExample(
-                        "Success",
-                        value={"message": "Password updated successfully."},
-                        response_only=True
-                    )
-                ]
-            ),
-            400: OpenApiResponse(
-                response=ErrorResponseSerializer,
-                description="Invalid old password",
-                examples=[
-                    OpenApiExample(
-                        "WrongPassword",
-                        value={"old_password": "Current password is incorrect."},
-                        response_only=True
-                    )
-                ]
-            )
-        },
-            description="Allows an authenticated space manager to change their password by providing the old and new password."
-    )
-    def post(self, request):
-        serializer = SpaceManagerPasswordChangeSerializer(data=request.data, context={'request': request})
-        if serializer.is_valid():
-            user = request.user
-            user.set_password(serializer.validated_data['new_password'])
-            user.save()
-            return Response({"message": "Password updated successfully."}, status=200)
-        return Response(serializer.errors, status=400)
-    
+  
 
 class SpaceListView(APIView):
     permission_classes = [IsAuthenticated]
@@ -333,3 +293,69 @@ class EventDetailView(APIView):
 
         serializer = EventDetailSerializer(event)
         return Response(serializer.data, status=200)
+    
+    
+class SpaceManagerProfileUpdateView(APIView):
+    permission_classes = [IsAuthenticated]
+    
+    @extend_schema(
+        request=SpaceManagerProfileUpdateSerializer,
+        responses={
+            200: OpenApiResponse(
+                response=SuccessResponseSerializer,
+                description="Profile updated successfully.",
+                examples=[
+                    OpenApiExample(
+                        name="UpdateSuccess",
+                        value={"message": "Profile updated successfully."}
+                    )
+                ]
+            ),
+            400: OpenApiResponse(
+                response=ErrorResponseSerializer,
+                description="Invalid input or validation error.",
+                examples=[
+                    OpenApiExample(
+                        name="UsernameError",
+                        value={"username": ["This username is already in use."]}
+                    ),
+                    OpenApiExample(
+                        name="EmailError",
+                        value={"email": ["This email is already in use."]}
+                    ),
+                    OpenApiExample(
+                        name="MissingCurrentPassword",
+                        value={"current_password": ["Current password is required to change password."]}
+                    ),
+                    OpenApiExample(
+                        name="IncorrectCurrentPassword",
+                        value={"current_password": ["Current password is incorrect."]}
+                    ),
+                ]
+            ),
+            401: OpenApiResponse(
+                response=ErrorResponseSerializer,
+                description="Authentication credentials were not provided or invalid.",
+                examples=[
+                    OpenApiExample(
+                        name="Unauthorized",
+                        value={"detail": "Authentication credentials were not provided."}
+                    )
+                ]
+            ),
+        },
+        description="Update profile information of the authenticated space manager"
+    )    
+    
+    def patch(self, request):
+        spaceManager = request.user.spacemanager
+        serializer = SpaceManagerProfileUpdateSerializer(
+            instance=spaceManager,
+            data=request.data,
+            partial=True,
+            context={'request': request}
+        )
+        if serializer.is_valid():
+            serializer.save()
+            return Response({"message": "Profile updated successfully."}, status=status.HTTP_200_OK)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)

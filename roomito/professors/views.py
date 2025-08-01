@@ -335,16 +335,20 @@ class ProfessorProfileUpdateView(APIView):
             examples=[
                 OpenApiExample(
                     name="ValidationError",
-                    value={
-                        "personnel_code": ["This personnel code is already in use."]
-                    }
+                    value={"personnel_code": ["This personnel code is already in use."]}
                 ),
                 OpenApiExample(
                     name="ValidationError",
-                    value={
-                        "national_code": ["This national code is already in use."]
-                    }
-                )
+                    value={"national_code": ["This national code is already in use."]}
+                ),
+                OpenApiExample(
+                    name="MissingCurrentPassword",
+                    value={"current_password": ["Current password is required to change password."]}
+                ),
+                OpenApiExample(
+                    name="IncorrectCurrentPassword",
+                    value={"current_password": ["Current password is incorrect."]}
+                ),
             ]
         ),
         401: OpenApiResponse(
@@ -358,7 +362,7 @@ class ProfessorProfileUpdateView(APIView):
             ]
         ),
     },
-        description="update profile informations of professor"
+        description="update profile informations of the authenticated professor"
 )
     
     def patch(self, request):

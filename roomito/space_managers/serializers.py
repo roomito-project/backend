@@ -6,11 +6,14 @@ from professors.models import Professor
 from students.models import Student
 from common.validators import validate_password_strength
 
+
 class ErrorResponseSerializer(serializers.Serializer):
     error = serializers.CharField()
 
+
 class SuccessResponseSerializer(serializers.Serializer):
     message = serializers.CharField()
+
 
 class TokenResponseSerializer(serializers.Serializer):
     access = serializers.CharField()
@@ -34,21 +37,6 @@ class SpaceManagerProfileSerializer(serializers.ModelSerializer):
         fields = ['first_name', 'last_name', 'email', 'username', 'spaces']
 
 
-class SpaceManagerPasswordChangeSerializer(serializers.Serializer):
-    old_password = serializers.CharField(write_only=True)
-    new_password = serializers.CharField(write_only=True)
-
-    def validate_password(self, value):
-        validate_password_strength(value)
-        return value
-    
-    def validate(self, data):
-        user = self.context['request'].user
-        if not user.check_password(data['old_password']):
-            raise serializers.ValidationError({"old_password": "Current password is incorrect."})
-        return data
-
-
 class SpaceListSerializer(serializers.ModelSerializer):
     space_manager = SpaceManagerProfileSerializer(read_only=True)
     
@@ -68,6 +56,7 @@ class SpaceSerializer(serializers.ModelSerializer):
         model = Space
         fields = ['id', 'name', 'address', 'capacity']
 
+
 class StudentSerializer(serializers.ModelSerializer):
     first_name = serializers.CharField(source='user.first_name')
     last_name = serializers.CharField(source='user.last_name')
@@ -77,10 +66,12 @@ class StudentSerializer(serializers.ModelSerializer):
         model = Student
         fields = ['first_name', 'last_name', 'email', 'student_id']
 
+
 class ProfessorSerializer(serializers.ModelSerializer):
     class Meta:
         model = Professor
         fields = ['first_name', 'last_name', 'personnel_code', 'email']
+
 
 class EventSerializer(serializers.ModelSerializer):
     space = SpaceSerializer(read_only=True)
@@ -140,3 +131,53 @@ class EventDetailSerializer(serializers.ModelSerializer):
             return request.build_absolute_uri(obj.poster.url) if request else obj.poster.url
         return None
     
+    
+class SpaceManagerProfileUpdateSerializer(serializers.Serializer):
+    first_name = serializers.CharField(max_length=100)
+    last_name = serializers.CharField(max_length=100)
+    username = serializers.CharField(max_length=100)
+    email = serializers.EmailField()
+    current_password = serializers.CharField(write_only=True, required=False)
+    new_password = serializers.CharField(write_only=True, required=False, min_length=8)  
+    
+    def validate_password(self, value):
+        validate_password_strength(value)
+        return value
+    
+    def validate_username(self, value):
+        user = self.context['request'].user
+        if User.objects.exclude(pk=user.pk).filter(username=value).exists():
+            raise serializers.ValidationError("This username is already in use.")
+        return value
+    
+    def validate_email(self, value):
+        user = self.context['request'].user
+        if User.objects.exclude(pk=user.pk).filter(email=value).exists():
+            raise serializers.ValidationError("This email is already in use.")
+        return value
+    
+    def validate(self, attrs):
+        if 'new_password' in attrs:
+            if 'current_password' not in attrs:
+                raise serializers.ValidationError({"current_password": "Current password is required to change password."})
+            user = self.context['request'].user
+            if not user.check_password(attrs['current_password']):
+                raise serializers.ValidationError({"current_password": "Current password is incorrect."})
+        return attrs
+    
+    def update(self, instance, validated_data):
+        user = instance.user
+        user.first_name = validated_data.get("first_name", user.first_name)
+        user.last_name = validated_data.get("last_name", user.last_name)
+        user.username = validated_data.get("username", user.username)
+        user.email = validated_data.get("email", user.email)
+        if 'new_password' in validated_data:
+            user.set_password(validated_data['new_password'])
+        user.save()
+        
+        instance.first_name = user.first_name
+        instance.last_name = user.last_name
+        instance.email = user.email
+        instance.username = validated_data.get("username", instance.username)
+        instance.save()
+        return instance

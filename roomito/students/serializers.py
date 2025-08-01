@@ -93,11 +93,21 @@ class StudentProfileUpdateSerializer(serializers.Serializer):
     last_name = serializers.CharField(max_length=100)
     student_id = serializers.CharField(max_length=20)
     national_id = serializers.CharField(max_length=10)
-    password = serializers.CharField(write_only=True, required=False, min_length=8)    
+    current_password = serializers.CharField(write_only=True, required=False)
+    new_password = serializers.CharField(write_only=True, required=False, min_length=8)    
     
     def validate_password(self, value):
         validate_password_strength(value)
         return value
+    
+    def validate(self, attrs):
+        if 'new_password' in attrs:
+            if 'current_password' not in attrs:
+                raise serializers.ValidationError({"current_password": "Current password is required to change password."})
+            user = self.context['request'].user
+            if not user.check_password(attrs['current_password']):
+                raise serializers.ValidationError({"current_password": "Current password is incorrect."})
+        return attrs
     
     def validate_student_id(self, value):
         student = getattr(self.context['request'].user, 'student_profile', None)
@@ -115,8 +125,8 @@ class StudentProfileUpdateSerializer(serializers.Serializer):
         user = instance.user
         user.first_name = validated_data.get("first_name", user.first_name)
         user.last_name = validated_data.get("last_name", user.last_name)
-        if 'password' in validated_data:
-            user.set_password(validated_data['password'])
+        if 'new_password' in validated_data:
+            user.set_password(validated_data['new_password'])
         user.save()
         
         instance.student_id = validated_data.get('student_id', instance.student_id)
