@@ -1,6 +1,7 @@
 from rest_framework import serializers
 from .models import Professor
 from django.contrib.auth import authenticate
+from common.validators import validate_password_strength
 
 
 class ErrorResponseSerializer(serializers.Serializer):
@@ -23,6 +24,10 @@ class ProfessorRegisterSerializer(serializers.Serializer):
     national_id = serializers.CharField()
     personnel_code = serializers.CharField()
     password = serializers.CharField(write_only=True)
+    
+    def validate_password(self, value):
+        validate_password_strength(value)
+        return value
 
     def validate(self, data):
         required_fields = ['first_name', 'last_name', 'email', 'national_id', 'personnel_code', 'password']
@@ -106,3 +111,42 @@ class ResendVerificationSerializer(serializers.Serializer):
             raise serializers.ValidationError("No unregistered professor found with this personnel code.")
         return value
     
+
+class ProfessorProfileUpdateSerializer(serializers.Serializer):
+    first_name = serializers.CharField(max_length=100)
+    last_name = serializers.CharField(max_length=100)
+    personnel_code = serializers.CharField(max_length=20)
+    national_id = serializers.CharField(max_length=10)
+    password = serializers.CharField(write_only=True, required=False, min_length=8)
+    
+    def validate_password(self, value):
+        validate_password_strength(value)
+        return value
+    
+    def validate_personnel_code(self, value):
+        professor = self.context['request'].user.professor
+        if Professor.objects.exclude(pk=professor.pk).filter(personnel_code=value).exists():
+            raise serializers.ValidationError("This personnel code is already in use.")
+        return value
+
+    def validate_national_id(self, value):
+        professor = self.context['request'].user.professor
+        if Professor.objects.exclude(pk=professor.pk).filter(national_id=value).exists():
+            raise serializers.ValidationError("This national ID is already in use.")
+        return value
+    
+    def update(self, instance, validated_data):
+        user = instance.user
+        user.first_name = validated_data.get("first_name", user.first_name)
+        user.last_name = validated_data.get("last_name", user.last_name)
+        if 'password' in validated_data:
+            user.set_password(validated_data['password'])
+        user.save()
+
+        instance.first_name = validated_data.get("first_name", instance.first_name)
+        instance.last_name = validated_data.get("last_name", instance.last_name)
+        instance.personnel_code = validated_data.get("personnel_code", instance.personnel_code)
+        instance.national_id = validated_data.get("national_id", instance.national_id)
+        instance.save()
+
+        return instance

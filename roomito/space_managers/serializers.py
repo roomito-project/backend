@@ -4,6 +4,7 @@ from .models import Space, SpaceManager, Event
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from professors.models import Professor
 from students.models import Student
+from common.validators import validate_password_strength
 
 class ErrorResponseSerializer(serializers.Serializer):
     error = serializers.CharField()
@@ -37,6 +38,10 @@ class SpaceManagerPasswordChangeSerializer(serializers.Serializer):
     old_password = serializers.CharField(write_only=True)
     new_password = serializers.CharField(write_only=True)
 
+    def validate_password(self, value):
+        validate_password_strength(value)
+        return value
+    
     def validate(self, data):
         user = self.context['request'].user
         if not user.check_password(data['old_password']):

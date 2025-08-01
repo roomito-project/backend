@@ -9,8 +9,8 @@ from drf_spectacular.utils import extend_schema, OpenApiExample, OpenApiResponse
 from django.core.cache import cache
 from rest_framework.throttling import SimpleRateThrottle
 from rest_framework.throttling import ScopedRateThrottle
-from drf_spectacular import openapi
 from .models import Professor
+from rest_framework.permissions import IsAuthenticated
 from .serializers import (
     ProfessorRegisterSerializer,
     ProfessorVerifySerializer,
@@ -18,7 +18,8 @@ from .serializers import (
     ErrorResponseSerializer,
     ResendVerificationSerializer,
     SuccessResponseSerializer,
-    TokenResponseSerializer
+    TokenResponseSerializer,
+    ProfessorProfileUpdateSerializer
 )
 
 
@@ -279,7 +280,8 @@ class ProfessorResendVerificationView(APIView):
                 response=ErrorResponseSerializer,
                 description="Too many attempts or invalid code"
             )
-        }
+        },
+            description="resend verification code to professor"
     )
     def post(self, request):
         serializer = ResendVerificationSerializer(data=request.data)
@@ -309,3 +311,69 @@ class ProfessorResendVerificationView(APIView):
             return Response({"error": "Failed to send verification email."}, status=500)
 
         return Response({"message": "A new verification code has been sent to the email."}, status=200)
+    
+    
+class ProfessorProfileUpdateView(APIView):
+    permission_classes = [IsAuthenticated]   
+    
+    @extend_schema(
+    request=ProfessorProfileUpdateSerializer,
+    responses={
+        200: OpenApiResponse(
+            response=SuccessResponseSerializer,
+            description="Profile updated successfully.",
+            examples=[
+                OpenApiExample(
+                    name="UpdateSuccess",
+                    value={"message": "Profile updated successfully."}
+                )
+            ]
+        ),
+        400: OpenApiResponse(
+            description="Invalid input or validation error.",
+            examples=[
+                OpenApiExample(
+                    name="ValidationError",
+                    value={
+                        "personnel_code": ["This personnel code is already in use."]
+                    }
+                )
+            ]
+        ),
+        400: OpenApiResponse(
+            description="Invalid input or validation error.",
+            examples=[
+                OpenApiExample(
+                    name="ValidationError",
+                    value={
+                        "national_code": ["This national code is already in use."]
+                    }
+                )
+            ]
+        ),
+        401: OpenApiResponse(
+            description="Authentication credentials were not provided or invalid.",
+            examples=[
+                OpenApiExample(
+                    name="Unauthorized",
+                    value={"detail": "Authentication credentials were not provided."}
+                )
+            ]
+        ),
+    },
+        description="update profile informations of professor"
+)
+    
+    def patch(self, request):
+        professor = request.user.professor
+        serializer = ProfessorProfileUpdateSerializer(
+            instance=professor,
+            data=request.data,
+            partial=True,
+            context={'request': request}
+        )
+        if serializer.is_valid():
+            serializer.save()
+            return Response({"message": "Profile updated successfully."}, status=status.HTTP_200_OK)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        

@@ -4,6 +4,8 @@ from django.contrib.auth.hashers import make_password
 from django.utils.translation import gettext_lazy as _
 from django.core.exceptions import ValidationError
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
+
+from common.validators import validate_password_strength
 from .models import Student
 
 
@@ -30,6 +32,10 @@ class StudentRegistrationSerializer(serializers.Serializer):
     national_id = serializers.CharField()
     student_card_photo = serializers.ImageField()
 
+    def validate_password(self, value):
+        validate_password_strength(value)
+        return value
+    
     def validate(self, data):
         if not data.get('first_name'):
             raise serializers.ValidationError({"first_name": _("First name is required.")})

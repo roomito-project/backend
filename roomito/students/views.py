@@ -74,7 +74,7 @@ class StudentRegisterView(APIView):
     def post(self, request):
         serializer = StudentRegistrationSerializer(data=request.data)
         if not serializer.is_valid():
-            return Response({"error": "One or more fields are invalid."}, status=status.HTTP_400_BAD_REQUEST)
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
         data = serializer.validated_data
 
