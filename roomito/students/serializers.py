@@ -3,7 +3,6 @@ from django.contrib.auth.models import User
 from django.contrib.auth.hashers import make_password
 from django.utils.translation import gettext_lazy as _
 from django.core.exceptions import ValidationError
-from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from common.validators import validate_password_strength
 from .models import Student
 
@@ -72,21 +71,6 @@ class StudentRegistrationSerializer(serializers.Serializer):
 
         return data
 
-
-class StudentLoginSerializer(TokenObtainPairSerializer):
-    username_field = 'username'
-
-    def validate(self, attrs):
-        data = super().validate(attrs)
-
-        if hasattr(self.user, 'student_profile'):
-            if not self.user.student_profile.is_approved:
-                raise serializers.ValidationError({"error": _("Your student card is not yet approved.")})
-        else:
-            raise serializers.ValidationError({"error": _("User is not a student.")})
-
-        return data
-    
 
 class StudentProfileUpdateSerializer(serializers.Serializer):
     first_name = serializers.CharField(max_length=100)

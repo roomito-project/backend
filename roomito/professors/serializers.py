@@ -37,18 +37,6 @@ class ProfessorRegisterSerializer(serializers.Serializer):
         return data
 
 
-class ProfessorLoginSerializer(serializers.Serializer):
-    personnel_code = serializers.CharField()
-    password = serializers.CharField(write_only=True)
-
-    def validate(self, data):
-        if not data.get('personnel_code'):
-            raise serializers.ValidationError({"personnel_code": "Personnel code is required."})
-        if not data.get('password'):
-            raise serializers.ValidationError({"password": "Password is required."})
-        return data
-    
-
 class ProfessorProfileUpdateSerializer(serializers.Serializer):
     first_name = serializers.CharField(max_length=100)
     last_name = serializers.CharField(max_length=100)

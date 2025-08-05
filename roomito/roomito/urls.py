@@ -11,6 +11,7 @@ urlpatterns = [
     path('api/', include('students.urls')),
     path('api/', include('professors.urls')),
     path('api/', include('space_managers.urls')),
+    path('api/', include('common.urls')), 
     path('api/schema/', SpectacularAPIView.as_view(), name='api-schema'),
     path('api/swagger/', SpectacularSwaggerView.as_view(url_name='api-schema'), name='swagger-ui-alt'),
     path('api/token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),

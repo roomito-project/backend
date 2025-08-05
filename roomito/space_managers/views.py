@@ -2,56 +2,17 @@ from rest_framework.views import APIView
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework import status
-from rest_framework_simplejwt.views import TokenObtainPairView
 from drf_spectacular.utils import extend_schema, OpenApiResponse, OpenApiExample, OpenApiParameter
 from .models import Space, Event
 from .serializers import (
     ErrorResponseSerializer,
     SuccessResponseSerializer,
-    TokenResponseSerializer,
     SpaceManagerProfileSerializer,
-    SpaceManagerLoginSerializer,
     SpaceListSerializer,
     EventSerializer,
     EventDetailSerializer,
     SpaceManagerProfileUpdateSerializer,
 )
-
-
-class SpaceManagerLoginView(TokenObtainPairView):
-    serializer_class = SpaceManagerLoginSerializer
-
-    @extend_schema(
-        request=SpaceManagerLoginSerializer,
-        responses={
-            200: OpenApiResponse(
-                response=TokenResponseSerializer,
-                description="Login successful",
-                examples=[
-                    OpenApiExample(
-                        "LoginSuccess",
-                        value={"access": "access_token", "refresh": "refresh_token"},
-                        response_only=True
-                    )
-                ]
-            ),
-            400: OpenApiResponse(
-                response=ErrorResponseSerializer,
-                description="Invalid credentials or not a space manager",
-                examples=[
-                    OpenApiExample(
-                        "InvalidUser",
-                        value={"error": "User is not a space manager."},
-                        response_only=True
-                    )
-                ]
-            )
-        },
-            description="Space manager login with username and password sent to their email."
-    )
-    def post(self, request, *args, **kwargs):
-        return super().post(request, *args, **kwargs)
-
 
 class SpaceManagerProfileView(APIView):
     permission_classes = [IsAuthenticated]

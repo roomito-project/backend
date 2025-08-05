@@ -11,10 +11,8 @@ from .models import Professor
 from rest_framework.permissions import IsAuthenticated
 from .serializers import (
     ProfessorRegisterSerializer,
-    ProfessorLoginSerializer,
     ErrorResponseSerializer,
     SuccessResponseSerializer,
-    TokenResponseSerializer,
     ProfessorProfileUpdateSerializer
 )
 
@@ -102,93 +100,6 @@ class ProfessorRegisterView(APIView):
             return Response({"error": "Failed to send verification email."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
         return Response({"message": "The temporary password has been sent to the email."}, status=status.HTTP_200_OK)
-
-class ProfessorLoginView(APIView):
-    @extend_schema(
-        request=ProfessorLoginSerializer,
-        responses={
-            200: OpenApiResponse(
-                response=TokenResponseSerializer,
-                description="Login successful",
-                examples=[
-                    OpenApiExample(
-                        name="LoginSuccess",
-                        value={"access": "token_string", "refresh": "refresh_token_string"},
-                    )
-                ]
-            ),
-            400: OpenApiResponse(
-                response=ErrorResponseSerializer,
-                description="Invalid login data",
-                examples=[
-                    OpenApiExample(
-                        name="InvalidData",
-                        value={"error": "Invalid data provided."},
-                    )
-                ]
-            ),
-            401: OpenApiResponse(
-                response=ErrorResponseSerializer,
-                description="Unauthorized",
-                examples=[
-                    OpenApiExample(
-                        name="UnauthorizedError",
-                        value={"error": "Invalid personnel code or password."},
-                    )
-                ]
-            ),
-            500: OpenApiResponse(
-                response=ErrorResponseSerializer,
-                description="Token generation failed",
-                examples=[
-                    OpenApiExample(
-                        name="TokenGenerationError",
-                        value={"error": "Failed to generate token."},
-                    )
-                ]
-            ),
-        },
-        description="Professor login using personnel code and temporary password"
-    )
-    def post(self, request):
-        serializer = ProfessorLoginSerializer(data=request.data)
-        if not serializer.is_valid():
-            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
-        personnel_code = serializer.validated_data['personnel_code']
-        password = serializer.validated_data['password']
-
-        try:
-            professor = Professor.objects.get(personnel_code=personnel_code)
-            email = professor.email 
-            if not professor.is_registered:
-                cached_password = cache.get(f"professor_password_{email}")
-                if cached_password and cached_password == password:
-                    user = User.objects.create_user(
-                        username=personnel_code, 
-                        password=password
-                    )
-                    professor.user = user
-                    professor.is_registered = True
-                    professor.save()
-                    cache.delete(f"professor_password_{email}")
-                else:
-                    return Response({"error": "Invalid personnel code or password."}, status=status.HTTP_401_UNAUTHORIZED)
-            else:
-                user = professor.user
-                if not user.check_password(password):
-                    return Response({"error": "Invalid personnel code or password."}, status=status.HTTP_401_UNAUTHORIZED)
-        except Professor.DoesNotExist:
-            return Response({"error": "Invalid personnel code or password."}, status=status.HTTP_401_UNAUTHORIZED)
-
-        try:
-            refresh = RefreshToken.for_user(user)
-            return Response({
-                "access": str(refresh.access_token),
-                "refresh": str(refresh),
-            }, status=status.HTTP_200_OK)
-        except Exception:
-            return Response({"error": "Failed to generate token."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 class ProfessorProfileUpdateView(APIView):

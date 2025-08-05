@@ -5,14 +5,11 @@ from rest_framework.parsers import MultiPartParser, FormParser
 from django.contrib.auth.models import User
 from drf_spectacular.utils import extend_schema, OpenApiExample, OpenApiResponse
 from .models import Student
-from rest_framework_simplejwt.views import TokenObtainPairView
 from rest_framework.permissions import IsAuthenticated
 from .serializers import (
     StudentRegistrationSerializer,
     ErrorResponseSerializer,
     SuccessRegistrationResponseSerializer,
-    StudentLoginSerializer,
-    TokenResponseSerializer,
     StudentProfileUpdateSerializer,
     SuccessResponseSerializer,
 )
@@ -110,42 +107,7 @@ class StudentRegisterView(APIView):
 
         except Exception:
             return Response({"error": "An unexpected error occurred."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
-
-class StudentLoginView(TokenObtainPairView):
-    serializer_class = StudentLoginSerializer
-
-    @extend_schema(
-        request=StudentLoginSerializer,
-        responses={
-            200: OpenApiResponse(
-                response=TokenResponseSerializer,
-                description="Login successful",
-                examples=[
-                    OpenApiExample(
-                        name="LoginSuccess",
-                        value={"access": "access_token", "refresh": "refresh_token"},
-                        response_only=True
-                    )
-                ]
-            ),
-            400: OpenApiResponse(
-                response=ErrorResponseSerializer,
-                description="Invalid credentials or not approved",
-                examples=[
-                    OpenApiExample(
-                        name="LoginError",
-                        value={"error": "Your student card is not yet approved."},
-                        response_only=True
-                    )
-                ]
-            )
-        },
-            description="Student login by student id as username and password"
-    )
-    def post(self, request, *args, **kwargs):
-        return super().post(request, *args, **kwargs)
-    
+ 
     
 class StudentProfileUpdateView(APIView):
     permission_classes = [IsAuthenticated]

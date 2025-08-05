@@ -1,7 +1,6 @@
 from rest_framework import serializers
 from django.contrib.auth.models import User
 from .models import Space, SpaceManager, Event
-from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from professors.models import Professor
 from students.models import Student
 from common.validators import validate_password_strength
@@ -18,18 +17,7 @@ class SuccessResponseSerializer(serializers.Serializer):
 class TokenResponseSerializer(serializers.Serializer):
     access = serializers.CharField()
     refresh = serializers.CharField()
-
-
-class SpaceManagerLoginSerializer(TokenObtainPairSerializer):
-    def validate(self, attrs):
-        data = super().validate(attrs)
-        user = self.user
-
-        if not hasattr(user, 'spacemanager'):
-            raise serializers.ValidationError({"error": "User is not a space manager."})
-
-        return data
-
+    
 
 class SpaceManagerProfileSerializer(serializers.ModelSerializer):
     class Meta:
