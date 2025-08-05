@@ -14,7 +14,7 @@ from .serializers import (
     SpaceListSerializer,
     EventSerializer,
     EventDetailSerializer,
-    SpaceManagerProfileUpdateSerializer
+    SpaceManagerProfileUpdateSerializer,
 )
 
 
@@ -142,7 +142,7 @@ class SpaceListView(APIView):
                 ]
             )
         },
-        description="Retrieve the list of all available spaces for authenticated users."
+        description="Retrieves the list of all available spaces for authenticated users."
     )
     
     def get(self, request):
@@ -168,6 +168,8 @@ class EventListView(APIView):
                                 "title": "string",
                                 "event_type": "string",
                                 "date": "2025-07-27",
+                                "start_time": "02:48:04.892Z",
+                                "end_time": "02:48:04.892Z",
                                 "space": {"id": 1, "name": "string", "address": "string", "capacity": 50},
                                 "poster": "string.jpg",
                                 "organizer": "professor",
@@ -225,7 +227,7 @@ class EventListView(APIView):
                 ]
             )
         },
-        description="Retrieve the list of all available events for authenticated users."
+        description="Retrieves the list of all available events for authenticated users."
     )
 
     def get(self, request):
@@ -280,7 +282,7 @@ class EventDetailView(APIView):
                 ]
             )
         },
-        description="Retrieve detailed information of a specific event by ID (authenticated access required)."
+        description="Retrieves detailed information of a specific event by ID for authenticated user."
     )
 
     def get(self, request, event_id):

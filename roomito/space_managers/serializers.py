@@ -75,24 +75,31 @@ class ProfessorSerializer(serializers.ModelSerializer):
 
 class EventSerializer(serializers.ModelSerializer):
     space = SpaceSerializer(read_only=True)
-    student = StudentSerializer(read_only=True)
-    professor = ProfessorSerializer(read_only=True)
+    student_organizer = StudentSerializer(read_only=True)
+    professor_organizer = ProfessorSerializer(read_only=True)
     poster = serializers.ImageField(read_only=True, allow_null=True)
+    date = serializers.DateField(source='schedule.date', read_only=True)
+    start_time = serializers.TimeField(source='schedule.start_time', read_only=True)
+    end_time = serializers.TimeField(source='schedule.end_time', read_only=True)
 
     class Meta:
         model = Event
-        fields = ['id', 'title', 'event_type', 'date', 'space', 'poster', 'organizer', 'student', 'professor', 'description']
-        read_only_fields = ['id', 'title', 'event_type', 'date', 'space', 'poster', 'organizer', 'student', 'professor', 'description']
+        fields = [
+            'id', 'title', 'event_type', 'date', 'start_time', 'end_time',
+            'space', 'poster', 'organizer',
+            'student_organizer', 'professor_organizer', 'description'
+        ]
+        read_only_fields = fields
 
     def validate(self, data):
         organizer = data.get('organizer')
-        student = data.get('student')
-        professor = data.get('professor')
+        student = data.get('student_organizer')
+        professor = data.get('professor_organizer')
 
         if organizer == 'student' and not student:
-            raise serializers.ValidationError({"student": "A student must be selected when organizer is 'student'."})
+            raise serializers.ValidationError({"student_organizer": "A student must be selected when organizer is 'student'."})
         if organizer == 'professor' and not professor:
-            raise serializers.ValidationError({"professor": "A professor must be selected when organizer is 'professor'."})
+            raise serializers.ValidationError({"professor_organizer": "A professor must be selected when organizer is 'professor'."})
         if student and professor:
             raise serializers.ValidationError({"error": "Only one organizer (student or professor) can be selected."})
 
@@ -103,19 +110,15 @@ class EventDetailSerializer(serializers.ModelSerializer):
     organizer_name = serializers.SerializerMethodField()
     space_name = serializers.CharField(source='space.name', default=None)
     poster_url = serializers.SerializerMethodField()
+    date = serializers.DateField(source='schedule.date', default=None)
+    start_time = serializers.TimeField(source='schedule.start_time', default=None)
+    end_time = serializers.TimeField(source='schedule.end_time', default=None)
 
     class Meta:
         model = Event
         fields = [
-            'id',
-            'title',
-            'event_type',
-            'date',
-            'space_name',
-            'poster_url',
-            'organizer',
-            'organizer_name',
-            'description'
+            'id', 'title', 'event_type', 'date', 'start_time', 'end_time',
+            'space_name', 'poster_url', 'organizer', 'organizer_name', 'description'
         ]
 
     def get_organizer_name(self, obj):

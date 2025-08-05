@@ -17,7 +17,7 @@ class StudentAdmin(admin.ModelAdmin):
     def get_last_name(self, obj):
         return obj.user.last_name
 
-    @admin.action(description="Confirmation of selected students and sending notification email")
+    @admin.action(description="Confirm selected students and send notification email")
     def approve_students(self, request, queryset):
         approved_count = 0
         for student in queryset:

@@ -1,9 +1,9 @@
-from xml.dom import ValidationErr
 from django.db import models
 from django.contrib.auth.models import User
 from students.models import Student
 from professors.models import Professor
 from django.core.exceptions import ValidationError
+
 
 class SpaceManager(models.Model):
     user = models.OneToOneField(User, on_delete=models.CASCADE)
@@ -16,6 +16,7 @@ class SpaceManager(models.Model):
     def __str__(self):
         return f"{self.first_name} {self.last_name}"
 
+
 class Space(models.Model):
     name = models.CharField(max_length=100)
     address = models.TextField()
@@ -24,6 +25,7 @@ class Space(models.Model):
 
     def __str__(self):
         return f"{self.name} (capacity: {self.capacity})"
+
 
 class Reservation(models.Model):
     RESERVATION_TYPES = (
@@ -43,18 +45,19 @@ class Reservation(models.Model):
         ('rejected', 'Rejected'),
     )
     reservation_type = models.CharField(max_length=20, choices=RESERVATION_TYPES)
-    date = models.DateField()
     reservee_type = models.CharField(max_length=20, choices=RESERVEE_TYPES)
     student = models.ForeignKey(Student, on_delete=models.SET_NULL, null=True, blank=True)
     professor = models.ForeignKey(Professor, on_delete=models.SET_NULL, null=True, blank=True)
     description = models.CharField(default='no description')
     status = models.CharField(max_length=20, choices=STATUSES, default='under_review')
-    space = models.ForeignKey(Space, on_delete=models.SET_NULL, null=True, blank=True, )
-    schedule = models.OneToOneField('Schedule', on_delete=models.CASCADE, null=True, blank=True, related_name='reservation_instance')      
+    space = models.ForeignKey(Space, on_delete=models.SET_NULL, null=True, blank=True)
+    schedule = models.OneToOneField('Schedule', on_delete=models.CASCADE, null=True, blank=True, related_name='reservation_instance')
 
     def __str__(self):
         reservee_name = self.student.first_name if self.student else self.professor.first_name if self.professor else "unknown"
-        return f"{self.reservation_type} - {self.date} (reservee: {reservee_name}, status: {self.status})"
+        if self.schedule:
+            return f"{self.reservation_type} - {self.schedule.date} {self.schedule.start_time} to {self.schedule.end_time} (reservee: {reservee_name}, status: {self.status})"
+        return f"{self.reservation_type} - no schedule (reservee: {reservee_name}, status: {self.status})"
 
     def save(self, *args, **kwargs):
         if self.student and self.professor:
@@ -66,25 +69,27 @@ class Reservation(models.Model):
         super().save(*args, **kwargs)
 
 class Schedule(models.Model):
-    start_time = models.DateTimeField()
-    end_time = models.DateTimeField()
+    start_time = models.TimeField()
+    end_time = models.TimeField()
+    date = models.DateField()
     space = models.ForeignKey(Space, on_delete=models.CASCADE)
     reservation = models.OneToOneField(Reservation, on_delete=models.CASCADE, related_name='schedule_instance')
 
     def __str__(self):
-        return f"{self.space.name} - {self.start_time} till {self.end_time}"
+        return f"{self.space.name} - {self.date} - {self.start_time} till {self.end_time}"
 
     def clean(self):
         if self.end_time <= self.start_time:
-            raise ValidationErr("The end time must be after the start time.")
-        existing_schedules = Schedule.objects.filter(space=self.space).exclude(id=self.id if self.id else None)
+            raise ValidationError("The end time must be after the start time.")
+        existing_schedules = Schedule.objects.filter(space=self.space, date=self.date).exclude(id=self.id if self.id else None)
         for schedule in existing_schedules:
             if self.start_time < schedule.end_time and self.end_time > schedule.start_time:
-                raise ValidationErr("This time conflicts with another schedule.")
+                raise ValidationError("This time conflicts with another schedule on the same date.")
 
     def save(self, *args, **kwargs):
         self.clean()
         super().save(*args, **kwargs)
+        
 
 class Event(models.Model):
     EVENT_TYPES = (
@@ -99,23 +104,25 @@ class Event(models.Model):
     )
     title = models.CharField(max_length=200)
     event_type = models.CharField(max_length=20, choices=EVENT_TYPES)
-    date = models.DateField()
     space = models.ForeignKey(Space, on_delete=models.SET_NULL, null=True, blank=True)
     poster = models.ImageField(upload_to="event_posters/", null=True, blank=True)
     organizer = models.CharField(max_length=20, choices=ORGANIZER_TYPES)
     student_organizer = models.ForeignKey(Student, on_delete=models.SET_NULL, null=True, blank=True)
     professor_organizer = models.ForeignKey(Professor, on_delete=models.SET_NULL, null=True, blank=True)
     description = models.CharField(default='no description')
+    schedule = models.OneToOneField(Schedule, on_delete=models.SET_NULL, null=True, blank=True, related_name='event_instance')
 
     def __str__(self):
         organizer = self.student_organizer.first_name if self.student_organizer else self.professor_organizer.first_name if self.professor_organizer else "unknown"
-        return f"{self.title} (organizer: {organizer})"
+        if self.schedule:
+            return f"{self.title} (organizer: {organizer}, {self.schedule.date} {self.schedule.start_time} to {self.schedule.end_time})"
+        return f"{self.title} (organizer: {organizer}, no schedule)"
 
     def save(self, *args, **kwargs):
-        if self.organizer == 'student' and not self.student:
+        if self.organizer == 'student' and not self.student_organizer:
             raise ValueError("For the organizer, you must select a student.")
-        if self.organizer == 'professor' and not self.professor:
+        if self.organizer == 'professor' and not self.professor_organizer:
             raise ValueError("For the organizer of the master, you must choose a master.")
-        if self.student and self.professor:
+        if self.student_organizer and self.professor_organizer:
             raise ValueError("You can only choose one organizer (student or teacher).")
         super().save(*args, **kwargs)
