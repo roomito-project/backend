@@ -7,21 +7,16 @@ from django.utils.crypto import get_random_string
 from rest_framework_simplejwt.tokens import RefreshToken
 from drf_spectacular.utils import extend_schema, OpenApiExample, OpenApiResponse
 from django.core.cache import cache
-from rest_framework.throttling import SimpleRateThrottle
-from rest_framework.throttling import ScopedRateThrottle
 from .models import Professor
 from rest_framework.permissions import IsAuthenticated
 from .serializers import (
     ProfessorRegisterSerializer,
-    ProfessorVerifySerializer,
     ProfessorLoginSerializer,
     ErrorResponseSerializer,
-    ResendVerificationSerializer,
     SuccessResponseSerializer,
     TokenResponseSerializer,
     ProfessorProfileUpdateSerializer
 )
-
 
 class ProfessorRegisterView(APIView):
     @extend_schema(
@@ -30,38 +25,42 @@ class ProfessorRegisterView(APIView):
             200: OpenApiResponse(
                 response=SuccessResponseSerializer,
                 description="Successful registration",
-                examples=[OpenApiExample(
-                    "RegistrationSuccess",
-                    value={"message": "The verification code has been sent to the email."},
-                    response_only=True
-                )]
+                examples=[
+                    OpenApiExample(
+                        name="Success example",
+                        value={"message": "The verification code and temporary password have been sent to the email."},
+                    )
+                ]
             ),
             400: OpenApiResponse(
                 response=ErrorResponseSerializer,
                 description="Invalid registration data",
-                examples=[OpenApiExample(
-                    "InvalidData",
-                    value={"error": "Invalid data provided."},
-                    response_only=True
-                )]
+                examples=[
+                    OpenApiExample(
+                        name="InvalidData",
+                        value={"error": "Invalid data provided."},
+                    )
+                ]
             ),
             404: OpenApiResponse(
                 response=ErrorResponseSerializer,
-                description="Professor not found",
-                examples=[OpenApiExample(
-                    "ProfessorNotFound",
-                    value={"error": "Professor not found or already registered."},
-                    response_only=True
-                )]
+                description="Professor not found or email mismatch",
+                examples=[
+                    OpenApiExample(
+                        name="ProfessorNotFound",
+                        value={"error": "Professor not found or email does not match the registered email."},
+                    )
+                ]
             ),
             500: OpenApiResponse(
                 response=ErrorResponseSerializer,
                 description="Email sending failed",
-                examples=[OpenApiExample(
-                    "EmailSendError",
-                    value={"error": "Failed to send verification email."},
-                    response_only=True
-                )]
+                examples=[
+                    OpenApiExample(
+                        name="EmailSendError",
+                        value={"error": "Failed to send verification email."},
+                    )
+                ]
             ),
         },
         description="Professor registration by University email and etc."
@@ -74,24 +73,27 @@ class ProfessorRegisterView(APIView):
         data = serializer.validated_data
 
         try:
-            professor = Professor.objects.get(email=data['email'], is_registered=False)
+            professor = Professor.objects.get(
+                first_name__iexact=data['first_name'],
+                last_name__iexact=data['last_name'],
+                email__iexact=data['email'],
+                is_registered=False
+            )
         except Professor.DoesNotExist:
-            return Response({"error": "Professor not found or already registered."}, status=status.HTTP_404_NOT_FOUND)
+            return Response({"error": "Professor not found or details do not match the registered data."}, status=status.HTTP_404_NOT_FOUND)
 
-        code = get_random_string(length=6, allowed_chars='0123456789')
-        professor.first_name = data['first_name']
-        professor.last_name = data['last_name']
-        professor.national_id = data['national_id']
         professor.personnel_code = data['personnel_code']
-        professor.verification_code = code
+        professor.national_id = data['national_id']
         professor.save()
-        cache.set(f"professor_password_{data['personnel_code']}", data['password'], timeout=600)
 
+        temp_password = get_random_string(length=12, allowed_chars='abcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*')
+
+        cache.set(f"professor_password_{data['email']}", temp_password, timeout=600) 
 
         try:
             send_mail(
-                subject="کد تأیید ثبت‌نام در رومیتو",
-                message=f"کد تأیید شما: {code}",
+                subject="رمز موقت ثبت‌نام در رومیتو",
+                message=f"به رومیتو خوش آمدید\nرمز موقت شما: {temp_password}\nلطفاً پس از ورود رمز خود را تغییر دهید.",
                 from_email="mahyajfri37@example.com",
                 recipient_list=[professor.email],
                 fail_silently=False
@@ -99,92 +101,7 @@ class ProfessorRegisterView(APIView):
         except Exception:
             return Response({"error": "Failed to send verification email."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-        return Response({"message": "The verification code has been sent to the email."}, status=status.HTTP_200_OK)
-
-
-class ProfessorVerifyView(APIView):
-    @extend_schema(
-        request=ProfessorVerifySerializer,
-        responses={
-            200: OpenApiResponse(
-                response=SuccessResponseSerializer,
-                description="Verification successful",
-                examples=[OpenApiExample(
-                    "VerificationSuccess",
-                    value={"message": "The professor has been successfully registered."},
-                    response_only=True
-                )]
-            ),
-            400: OpenApiResponse(
-                response=ErrorResponseSerializer,
-                description="Invalid verification code or already registered",
-                examples=[OpenApiExample(
-                    "InvalidCode",
-                    value={"error": "The verification code is incorrect."},
-                    response_only=True
-                )]
-            ),
-            404: OpenApiResponse(
-                response=ErrorResponseSerializer,
-                description="Professor not found",
-                examples=[OpenApiExample(
-                    "NotFound",
-                    value={"error": "The professor could not be found."},
-                    response_only=True
-                )]
-            ),
-            500: OpenApiResponse(
-                response=ErrorResponseSerializer,
-                description="User creation failed",
-                examples=[OpenApiExample(
-                    "UserCreationFailure",
-                    value={"error": "Failed to create user account."},
-                    response_only=True
-                )]
-            ),
-        },
-        description="Professor verification using personnel code, verification code and password"
-    )
-    def post(self, request):
-        serializer = ProfessorVerifySerializer(data=request.data)
-        if not serializer.is_valid():
-            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
-        personnel_code = serializer.validated_data['personnel_code']
-        code = serializer.validated_data['verification_code']
-
-        try:
-            professor = Professor.objects.get(personnel_code=personnel_code)
-        except Professor.DoesNotExist:
-            return Response({"error": "The professor could not be found."}, status=404)
-
-        if professor.verification_code != code:
-            return Response({"error": "The verification code is incorrect."}, status=400)
-
-        if professor.is_registered:
-            return Response({"error": "This professor has registered before."}, status=400)
-        
-        password = cache.get(f"professor_password_{personnel_code}")
-        if not password:
-            return Response({"error": "Password expired or not found. Please register again."}, status=400)
-
-        try:
-            user = User.objects.create_user(
-                username=professor.personnel_code,
-                password=password
-            )
-            professor.user = user
-            professor.is_registered = True
-            professor.is_verified = True
-            professor.verification_code = None
-            professor.save()
-            cache.delete(f"professor_password_{personnel_code}")
-            
-        except Exception:
-            return Response({"error": "Failed to create user account."}, status=500)
-
-        return Response({"message": "The professor has been successfully registered."}, status=200)
-
+        return Response({"message": "The temporary password has been sent to the email."}, status=status.HTTP_200_OK)
 
 class ProfessorLoginView(APIView):
     @extend_schema(
@@ -193,48 +110,76 @@ class ProfessorLoginView(APIView):
             200: OpenApiResponse(
                 response=TokenResponseSerializer,
                 description="Login successful",
-                examples=[OpenApiExample(
-                    "LoginSuccess",
-                    value={"access": "token_string", "refresh": "refresh_token_string"},
-                    response_only=True
-                )]
+                examples=[
+                    OpenApiExample(
+                        name="LoginSuccess",
+                        value={"access": "token_string", "refresh": "refresh_token_string"},
+                    )
+                ]
             ),
             400: OpenApiResponse(
                 response=ErrorResponseSerializer,
                 description="Invalid login data",
-                examples=[OpenApiExample(
-                    "InvalidData",
-                    value={"error": "Invalid data provided."},
-                    response_only=True
-                )]
+                examples=[
+                    OpenApiExample(
+                        name="InvalidData",
+                        value={"error": "Invalid data provided."},
+                    )
+                ]
             ),
             401: OpenApiResponse(
                 response=ErrorResponseSerializer,
                 description="Unauthorized",
-                examples=[OpenApiExample(
-                    "UnauthorizedError",
-                    value={"error": "Invalid personnel code or password."},
-                    response_only=True
-                )]
+                examples=[
+                    OpenApiExample(
+                        name="UnauthorizedError",
+                        value={"error": "Invalid personnel code or password."},
+                    )
+                ]
             ),
             500: OpenApiResponse(
                 response=ErrorResponseSerializer,
                 description="Token generation failed",
-                examples=[OpenApiExample(
-                    "TokenGenerationError",
-                    value={"error": "Failed to generate token."},
-                    response_only=True
-                )]
+                examples=[
+                    OpenApiExample(
+                        name="TokenGenerationError",
+                        value={"error": "Failed to generate token."},
+                    )
+                ]
             ),
         },
-        description="Professor login using personnel code and password"
+        description="Professor login using personnel code and temporary password"
     )
     def post(self, request):
         serializer = ProfessorLoginSerializer(data=request.data)
         if not serializer.is_valid():
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-        user = serializer.validated_data['user']
+        personnel_code = serializer.validated_data['personnel_code']
+        password = serializer.validated_data['password']
+
+        try:
+            professor = Professor.objects.get(personnel_code=personnel_code)
+            email = professor.email 
+            if not professor.is_registered:
+                cached_password = cache.get(f"professor_password_{email}")
+                if cached_password and cached_password == password:
+                    user = User.objects.create_user(
+                        username=personnel_code, 
+                        password=password
+                    )
+                    professor.user = user
+                    professor.is_registered = True
+                    professor.save()
+                    cache.delete(f"professor_password_{email}")
+                else:
+                    return Response({"error": "Invalid personnel code or password."}, status=status.HTTP_401_UNAUTHORIZED)
+            else:
+                user = professor.user
+                if not user.check_password(password):
+                    return Response({"error": "Invalid personnel code or password."}, status=status.HTTP_401_UNAUTHORIZED)
+        except Professor.DoesNotExist:
+            return Response({"error": "Invalid personnel code or password."}, status=status.HTTP_401_UNAUTHORIZED)
 
         try:
             refresh = RefreshToken.for_user(user)
@@ -246,73 +191,6 @@ class ProfessorLoginView(APIView):
             return Response({"error": "Failed to generate token."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
-class ProfessorResendVerificationThrottle(SimpleRateThrottle):
-    scope = 'resend_verification'
-
-    def get_cache_key(self, request, view):
-        email = request.data.get('email')
-        if not email:
-            return None
-        return self.cache_format % {
-            'scope': self.scope,
-            'ident': email
-        }
-
-
-class ProfessorResendVerificationView(APIView):
-    throttle_classes = [ScopedRateThrottle]
-    throttle_scope = 'resend_verification'  
-
-    @extend_schema(
-        request=ResendVerificationSerializer,
-        responses={
-            200: OpenApiResponse(
-                response=SuccessResponseSerializer,
-                description="Verification code resent successfully",
-                examples=[
-                    OpenApiExample(
-                        "ResendSuccess",
-                        value={"message": "A new verification code has been sent to the email."}
-                    )
-                ]
-            ),
-            400: OpenApiResponse(
-                response=ErrorResponseSerializer,
-                description="Too many attempts or invalid code"
-            )
-        },
-            description="resend verification code to professor"
-    )
-    def post(self, request):
-        serializer = ResendVerificationSerializer(data=request.data)
-        if not serializer.is_valid():
-            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
-        personnel_code = serializer.validated_data['personnel_code']
-
-        try:
-            professor = Professor.objects.get(personnel_code=personnel_code, is_registered=False)
-        except Professor.DoesNotExist:
-            return Response({"error": "Professor not found or already registered."}, status=400)
-
-        code = get_random_string(length=6, allowed_chars='0123456789')
-        professor.verification_code = code
-        professor.save()
-
-        try:
-            send_mail(
-                subject="کد تأیید ثبت‌نام مجدد",
-                message=f"کد تأیید جدید شما: {code}",
-                from_email="mahyajfri37@gmail.com",
-                recipient_list=[professor.email],
-                fail_silently=False
-            )
-        except Exception:
-            return Response({"error": "Failed to send verification email."}, status=500)
-
-        return Response({"message": "A new verification code has been sent to the email."}, status=200)
-    
-    
 class ProfessorProfileUpdateView(APIView):
     permission_classes = [IsAuthenticated]   
     

@@ -8,8 +8,6 @@ class Professor(models.Model):
     email = models.EmailField(unique=True)
     personnel_code = models.CharField(max_length=20, unique=True, null=True)
     national_id = models.CharField(max_length=10, unique=True, null=True)
-    verification_code = models.CharField(max_length=6, null=True, blank=True)
-    is_verified = models.BooleanField(default=False)
     is_registered = models.BooleanField(default=False)
 
     def __str__(self):

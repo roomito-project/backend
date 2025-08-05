@@ -3,6 +3,7 @@ from django.contrib.auth.models import User
 from students.models import Student
 from professors.models import Professor
 from django.core.exceptions import ValidationError
+from django.utils import timezone
 
 
 class SpaceManager(models.Model):
@@ -71,7 +72,7 @@ class Reservation(models.Model):
 class Schedule(models.Model):
     start_time = models.TimeField()
     end_time = models.TimeField()
-    date = models.DateField()
+    date = models.DateField(default=timezone.now)
     space = models.ForeignKey(Space, on_delete=models.CASCADE)
     reservation = models.OneToOneField(Reservation, on_delete=models.CASCADE, related_name='schedule_instance')
 
