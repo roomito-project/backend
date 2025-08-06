@@ -16,7 +16,6 @@ from .serializers import (
 
 class SpaceManagerProfileView(APIView):
     permission_classes = [IsAuthenticated]
-
     @extend_schema(
         responses={
             200: OpenApiResponse(
@@ -30,7 +29,6 @@ class SpaceManagerProfileView(APIView):
                             "last_name": "string",
                             "email": "string@example.com",
                             "username": "string",
-                            "spaces": [1, 2]
                         },
                         response_only=True
                     )

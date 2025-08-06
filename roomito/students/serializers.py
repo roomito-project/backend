@@ -72,11 +72,23 @@ class StudentRegistrationSerializer(serializers.Serializer):
         return data
 
 
+class StudentProfileSerializer(serializers.ModelSerializer):
+    first_name = serializers.CharField(source='user.first_name')
+    last_name = serializers.CharField(source='user.last_name')
+    email = serializers.EmailField(source='user.email') 
+    student_card_photo = serializers.ImageField()
+
+    class Meta:
+        model = Student
+        fields = ['first_name', 'last_name', 'email', 'student_id', 'national_id', 'student_card_photo']
+    
+        
 class StudentProfileUpdateSerializer(serializers.Serializer):
     first_name = serializers.CharField(max_length=100)
     last_name = serializers.CharField(max_length=100)
     student_id = serializers.CharField(max_length=20)
     national_id = serializers.CharField(max_length=10)
+    email = serializers.EmailField()
     current_password = serializers.CharField(write_only=True, required=False)
     new_password = serializers.CharField(write_only=True, required=False, min_length=8)    
     
@@ -109,6 +121,7 @@ class StudentProfileUpdateSerializer(serializers.Serializer):
         user = instance.user
         user.first_name = validated_data.get("first_name", user.first_name)
         user.last_name = validated_data.get("last_name", user.last_name)
+        user.email = validated_data.get("email", user.email)
         if 'new_password' in validated_data:
             user.set_password(validated_data['new_password'])
         user.save()

@@ -22,7 +22,7 @@ class TokenResponseSerializer(serializers.Serializer):
 class SpaceManagerProfileSerializer(serializers.ModelSerializer):
     class Meta:
         model = SpaceManager
-        fields = ['first_name', 'last_name', 'email', 'username', 'spaces']
+        fields = ['first_name', 'last_name', 'email', 'username']
 
 
 class SpaceListSerializer(serializers.ModelSerializer):

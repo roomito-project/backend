@@ -70,6 +70,12 @@ class ProfessorProfileUpdateSerializer(serializers.Serializer):
             raise serializers.ValidationError("This national ID is already in use.")
         return value
     
+    def validate_email(self, value):
+        user = self.context['request'].user.professor
+        if Professor.objects.exclude(pk=Professor.pk).filter(email=value).exists():
+            raise serializers.ValidationError("This email is already in use.")
+        return value
+    
     def update(self, instance, validated_data):
         user = instance.user
         user.first_name = validated_data.get("first_name", user.first_name)
@@ -85,3 +91,9 @@ class ProfessorProfileUpdateSerializer(serializers.Serializer):
         instance.save()
 
         return instance
+    
+
+class ProfessorProfileSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Professor
+        fields = ["first_name", "last_name", "email", "personnel_code", "national_id"]    

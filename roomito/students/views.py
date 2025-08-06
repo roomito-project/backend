@@ -12,6 +12,7 @@ from .serializers import (
     SuccessRegistrationResponseSerializer,
     StudentProfileUpdateSerializer,
     SuccessResponseSerializer,
+    StudentProfileSerializer
 )
 
 
@@ -138,6 +139,10 @@ class StudentProfileUpdateView(APIView):
                         value={"national_id": ["This national ID is already in use."]}
                     ),
                     OpenApiExample(
+                        name="EmailError",
+                        value={"Email": ["This email is already in use."]}
+                    ),
+                    OpenApiExample(
                         name="MissingCurrentPassword",
                         value={"current_password": ["Current password is required to change password."]}
                     ),
@@ -173,3 +178,52 @@ class StudentProfileUpdateView(APIView):
             serializer.save()
             return Response({"message": "Profile updated successfully."}, status=status.HTTP_200_OK)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    
+
+class StudentProfileView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(
+        responses={
+            200: OpenApiResponse(
+                response=StudentProfileSerializer,
+                description="Student profile retrieved successfully",
+                examples=[
+                    OpenApiExample(
+                        "ProfileExample",
+                        value={
+                            "first_name": "string",
+                            "last_name": "string",
+                            "email": "string@example.com",
+                            "student_id": "string",
+                            "national_id": "string",
+                            "student_card_photo": "string.jpg"
+                        },
+                        response_only=True
+                    )
+                ]
+            ),
+            403: OpenApiResponse(
+                response=ErrorResponseSerializer,
+                description="User is not a student",
+                examples=[
+                    OpenApiExample(
+                        "NotStudent",
+                        value={"error": "User is not a student."},
+                        response_only=True
+                    )
+                ]
+            )
+        },
+        description="Retrieves the authenticated student's profile."
+    )
+    def get(self, request):
+        user = request.user
+
+        if not hasattr(user, 'student_profile'):
+            return Response({"error": "User is not a student."}, status=status.HTTP_403_FORBIDDEN)
+
+        student = user.student_profile
+        serializer = StudentProfileSerializer(student, context={'request': request})
+        return Response(serializer.data, status=status.HTTP_200_OK)
+    

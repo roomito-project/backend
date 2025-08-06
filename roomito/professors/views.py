@@ -13,7 +13,8 @@ from .serializers import (
     ProfessorRegisterSerializer,
     ErrorResponseSerializer,
     SuccessResponseSerializer,
-    ProfessorProfileUpdateSerializer
+    ProfessorProfileUpdateSerializer,
+    ProfessorProfileSerializer
 )
 
 class ProfessorRegisterView(APIView):
@@ -166,4 +167,51 @@ class ProfessorProfileUpdateView(APIView):
             serializer.save()
             return Response({"message": "Profile updated successfully."}, status=status.HTTP_200_OK)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        
+
+class ProfessorProfileView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(
+        responses={
+            200: OpenApiResponse(
+                response=ProfessorProfileSerializer,
+                description="Professor profile retrieved successfully",
+                examples=[
+                    OpenApiExample(
+                        "ProfessorProfileExample",
+                        value={
+                            "first_name": "string",
+                            "last_name": "string",
+                            "email": "string@example",
+                            "personnel_code": "string",
+                            "national_id": "string"
+                        },
+                        response_only=True
+                    )
+                ]
+            ),
+            403: OpenApiResponse(
+                response=ErrorResponseSerializer,
+                description="User is not a professor",
+                examples=[
+                    OpenApiExample(
+                        "NotProfessor",
+                        value={"error": "User is not a professor."},
+                        response_only=True
+                    )
+                ]
+            )
+        },
+        description="Retrieves the authenticated professor's profile"
+    )
+    def get(self, request):
+        user = request.user
+
+        if not hasattr(user, 'professor'):
+            return Response({"error": "User is not a professor."}, status=status.HTTP_403_FORBIDDEN)
+
+        professor = user.professor
+        serializer = ProfessorProfileSerializer(professor)
+        return Response(serializer.data, status=status.HTTP_200_OK)
         
