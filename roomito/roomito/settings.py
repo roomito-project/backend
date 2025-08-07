@@ -24,9 +24,11 @@ INSTALLED_APPS = [
     'space_managers',
     'rest_framework',
     'drf_spectacular',
+    'corsheaders',
 ]
 
 MIDDLEWARE = [
+    'corsheaders.middleware.CorsMiddleware',
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
@@ -34,6 +36,10 @@ MIDDLEWARE = [
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
+]
+
+CORS_ALLOWED_ORIGINS = [
+    "http://localhost:5173", 
 ]
 
 ROOT_URLCONF = 'roomito.urls'
@@ -135,3 +141,5 @@ EMAIL_USE_TLS = True
 EMAIL_HOST_USER = 'mahyajfri37@gmail.com'  
 EMAIL_HOST_PASSWORD = 'elbr voub wkgw oqwy'
 DEFAULT_FROM_EMAIL = 'mahyajfri37@gmail.com'
+
+CORS_ALLOW_CREDENTIALS = True
