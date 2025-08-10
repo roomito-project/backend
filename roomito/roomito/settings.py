@@ -1,5 +1,6 @@
 
 from pathlib import Path
+from datetime import timedelta
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -9,8 +10,6 @@ DEBUG = True
 
 ALLOWED_HOSTS = []
 
-
-# Application definition
 
 INSTALLED_APPS = [
     'django.contrib.admin',
@@ -70,9 +69,6 @@ TEMPLATES = [
 WSGI_APPLICATION = 'roomito.wsgi.application'
 
 
-# Database
-# https://docs.djangoproject.com/en/5.2/ref/settings/#databases
-
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.postgresql',
@@ -83,7 +79,6 @@ DATABASES = {
         'PORT': '5432',
     }
 }
-
 
 
 AUTH_PASSWORD_VALIDATORS = [
@@ -138,6 +133,14 @@ SPECTACULAR_SETTINGS = {
     'DESCRIPTION': 'APIs for space reservation system',
     'VERSION': '1.0.0',
     'COMPONENT_SPLIT_REQUEST': True,
+}
+
+
+SIMPLE_JWT = {
+    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=60),  
+    'REFRESH_TOKEN_LIFETIME': timedelta(days=7),    
+    'ROTATE_REFRESH_TOKENS': False,
+    'BLACKLIST_AFTER_ROTATION': False,
 }
 
 AUTH_USER_MODEL = 'auth.User'

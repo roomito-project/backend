@@ -1,6 +1,6 @@
 from rest_framework import serializers
 from django.contrib.auth.models import User
-from .models import Space, SpaceManager, Event
+from .models import Space, SpaceManager, Event, SpaceFeature
 from professors.models import Professor
 from students.models import Student
 from common.validators import validate_password_strength
@@ -19,18 +19,86 @@ class TokenResponseSerializer(serializers.Serializer):
     refresh = serializers.CharField()
     
 
+class SpaceFeatureSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = SpaceFeature
+        fields = ['id', 'name']
+
+
+class SpaceUpdateFeatureSerializer(serializers.Serializer):
+    action = serializers.ChoiceField(choices=['add_existing', 'add_new']) 
+    feature_name = serializers.CharField() 
+
+    def validate(self, data):
+        space = self.context.get('space')
+        if not space:
+            raise serializers.ValidationError("Space not found.")
+        return data        
+    
 class SpaceManagerProfileSerializer(serializers.ModelSerializer):
     class Meta:
         model = SpaceManager
         fields = ['first_name', 'last_name', 'email', 'username']
+        
+        
+class SpaceManagerProfileUpdateSerializer(serializers.Serializer):
+    first_name = serializers.CharField(max_length=100)
+    last_name = serializers.CharField(max_length=100)
+    username = serializers.CharField(max_length=100)
+    email = serializers.EmailField()
+    current_password = serializers.CharField(write_only=True, required=False)
+    new_password = serializers.CharField(write_only=True, required=False, min_length=8)  
+    
+    def validate_password(self, value):
+        validate_password_strength(value)
+        return value
+    
+    def validate_username(self, value):
+        user = self.context['request'].user
+        if User.objects.exclude(pk=user.pk).filter(username=value).exists():
+            raise serializers.ValidationError("This username is already in use.")
+        return value
+    
+    def validate_email(self, value):
+        user = self.context['request'].user
+        if User.objects.exclude(pk=user.pk).filter(email=value).exists():
+            raise serializers.ValidationError("This email is already in use.")
+        return value
+    
+    def validate(self, attrs):
+        if 'new_password' in attrs:
+            if 'current_password' not in attrs:
+                raise serializers.ValidationError({"current_password": "Current password is required to change password."})
+            user = self.context['request'].user
+            if not user.check_password(attrs['current_password']):
+                raise serializers.ValidationError({"current_password": "Current password is incorrect."})
+        return attrs
+    
+    def update(self, instance, validated_data):
+        user = instance.user
+        user.first_name = validated_data.get("first_name", user.first_name)
+        user.last_name = validated_data.get("last_name", user.last_name)
+        user.username = validated_data.get("username", user.username)
+        user.email = validated_data.get("email", user.email)
+        if 'new_password' in validated_data:
+            user.set_password(validated_data['new_password'])
+        user.save()
+        
+        instance.first_name = user.first_name
+        instance.last_name = user.last_name
+        instance.email = user.email
+        instance.username = validated_data.get("username", instance.username)
+        instance.save()
+        return instance        
 
 
 class SpaceListSerializer(serializers.ModelSerializer):
     space_manager = SpaceManagerProfileSerializer(read_only=True)
+    features = SpaceFeatureSerializer(many=True, read_only=True) 
     
     class Meta:
         model = Space
-        fields = ['id', 'name', 'address', 'capacity', 'space_manager']
+        fields = ['id', 'name', 'address', 'capacity', 'description', 'space_manager', 'features']
         read_only_fields = ['id'] 
 
     def validate_capacity(self, value):
@@ -42,7 +110,7 @@ class SpaceListSerializer(serializers.ModelSerializer):
 class SpaceSerializer(serializers.ModelSerializer):
     class Meta:
         model = Space
-        fields = ['id', 'name', 'address', 'capacity']
+        fields = ['id', 'name', 'address', 'capacity', 'description', 'space_manager', 'features']
 
 
 class StudentSerializer(serializers.ModelSerializer):
@@ -121,54 +189,4 @@ class EventDetailSerializer(serializers.ModelSerializer):
             request = self.context.get('request')
             return request.build_absolute_uri(obj.poster.url) if request else obj.poster.url
         return None
-    
-    
-class SpaceManagerProfileUpdateSerializer(serializers.Serializer):
-    first_name = serializers.CharField(max_length=100)
-    last_name = serializers.CharField(max_length=100)
-    username = serializers.CharField(max_length=100)
-    email = serializers.EmailField()
-    current_password = serializers.CharField(write_only=True, required=False)
-    new_password = serializers.CharField(write_only=True, required=False, min_length=8)  
-    
-    def validate_password(self, value):
-        validate_password_strength(value)
-        return value
-    
-    def validate_username(self, value):
-        user = self.context['request'].user
-        if User.objects.exclude(pk=user.pk).filter(username=value).exists():
-            raise serializers.ValidationError("This username is already in use.")
-        return value
-    
-    def validate_email(self, value):
-        user = self.context['request'].user
-        if User.objects.exclude(pk=user.pk).filter(email=value).exists():
-            raise serializers.ValidationError("This email is already in use.")
-        return value
-    
-    def validate(self, attrs):
-        if 'new_password' in attrs:
-            if 'current_password' not in attrs:
-                raise serializers.ValidationError({"current_password": "Current password is required to change password."})
-            user = self.context['request'].user
-            if not user.check_password(attrs['current_password']):
-                raise serializers.ValidationError({"current_password": "Current password is incorrect."})
-        return attrs
-    
-    def update(self, instance, validated_data):
-        user = instance.user
-        user.first_name = validated_data.get("first_name", user.first_name)
-        user.last_name = validated_data.get("last_name", user.last_name)
-        user.username = validated_data.get("username", user.username)
-        user.email = validated_data.get("email", user.email)
-        if 'new_password' in validated_data:
-            user.set_password(validated_data['new_password'])
-        user.save()
         
-        instance.first_name = user.first_name
-        instance.last_name = user.last_name
-        instance.email = user.email
-        instance.username = validated_data.get("username", instance.username)
-        instance.save()
-        return instance

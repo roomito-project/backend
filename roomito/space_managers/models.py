@@ -4,6 +4,8 @@ from students.models import Student
 from professors.models import Professor
 from django.core.exceptions import ValidationError
 from django.utils import timezone
+from django.core.validators import MinValueValidator
+from django.db.models.functions import Lower
 
 
 class SpaceManager(models.Model):
@@ -12,17 +14,30 @@ class SpaceManager(models.Model):
     last_name = models.CharField(max_length=100)
     username = models.CharField(max_length=50, unique=True)
     email = models.EmailField()
-    spaces = models.ManyToManyField('Space', help_text="managed spaces")
 
     def __str__(self):
         return f"{self.first_name} {self.last_name}"
 
 
+class SpaceFeature(models.Model):
+    name = models.CharField(max_length=100, unique=True)
+
+    def __str__(self):
+        return self.name
+    
+    
 class Space(models.Model):
     name = models.CharField(max_length=100)
     address = models.TextField()
-    capacity = models.IntegerField()
-    space_manager = models.ForeignKey(SpaceManager, on_delete=models.SET_NULL, null=True, blank=True)
+    capacity = models.IntegerField(validators=[MinValueValidator(1)])
+    description = models.TextField(default="no description")
+    space_manager = models.ForeignKey(
+        SpaceManager,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True
+    )
+    features = models.ManyToManyField(SpaceFeature, blank=True, related_name="spaces")
 
     def __str__(self):
         return f"{self.name} (capacity: {self.capacity})"
