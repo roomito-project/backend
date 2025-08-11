@@ -18,7 +18,7 @@ class SpaceManagerAdmin(admin.ModelAdmin):
 
     def save_model(self, request, obj, form, change):
         if not change and not obj.user_id:
-            temp_password = get_random_string(10)
+            temp_password = get_random_string(length=10, allowed_chars='abcdefghijklmnopqrstuvwxyz!@#$%^&*')
             user = User.objects.create_user(
                 username=obj.username,
                 password=temp_password,
@@ -32,7 +32,7 @@ class SpaceManagerAdmin(admin.ModelAdmin):
                 subject=" اطلاعات ورود مدیر فضا در رومیتو",
                 message=(
                     f"مدیر محترم {obj.first_name} {obj.last_name}،\n\n"
-                    f"حساب کاربری شما در سامانه مدیریت فضا ایجاد شد:\n\n"
+                    f"حساب کاربری شما در سامانه مدیریت فضا ایجاد شد.\n\n"
                     f"نام کاربری: {user.username}\n"
                     f"رمز عبور موقت: {temp_password}\n\n"
                     "لطفاً پس از ورود، رمز عبور خود را تغییر دهید."

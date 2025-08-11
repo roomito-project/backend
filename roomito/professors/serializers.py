@@ -1,6 +1,7 @@
 from rest_framework import serializers
 from .models import Professor
 from common.validators import validate_password_strength
+import re
 
 
 class ErrorResponseSerializer(serializers.Serializer):
@@ -17,10 +18,10 @@ class TokenResponseSerializer(serializers.Serializer):
 
 
 class ProfessorRegisterSerializer(serializers.Serializer):
-    first_name = serializers.CharField()
-    last_name = serializers.CharField()
+    first_name = serializers.CharField(max_length=100)
+    last_name = serializers.CharField(max_length=100)
     email = serializers.EmailField()
-    personnel_code = serializers.CharField()
+    personnel_code = serializers.CharField(max_length=10)
     national_id = serializers.CharField()
 
     def validate_email(self, value):
@@ -28,12 +29,21 @@ class ProfessorRegisterSerializer(serializers.Serializer):
             value = value.replace('[at]', '@')
         return value
 
+    def validate_national_id(self, value):
+        if not re.fullmatch(r'\d{10}', value):
+            raise serializers.ValidationError("National ID must be exactly 10 digits.")
+        return value
+
+    def validate_personnel_code(self, value):
+        if len(value) > 10:
+            raise serializers.ValidationError("Personnel code cannot be more than 10 characters.")
+        return value
+
     def validate(self, data):
         required_fields = ['first_name', 'last_name', 'email', 'personnel_code', 'national_id']
         for field in required_fields:
             if not data.get(field):
                 raise serializers.ValidationError({field: "This field is required."})
-
         return data
 
 
@@ -42,6 +52,7 @@ class ProfessorProfileUpdateSerializer(serializers.Serializer):
     last_name = serializers.CharField(max_length=100)
     personnel_code = serializers.CharField(max_length=20)
     national_id = serializers.CharField(max_length=10)
+    email = serializers.EmailField()
     current_password = serializers.CharField(write_only=True, required=False)
     new_password = serializers.CharField(write_only=True, required=False, min_length=8)  
     
@@ -70,16 +81,17 @@ class ProfessorProfileUpdateSerializer(serializers.Serializer):
             raise serializers.ValidationError("This national ID is already in use.")
         return value
     
-    def validate_email(self, value):
-        user = self.context['request'].user.professor
-        if Professor.objects.exclude(pk=Professor.pk).filter(email=value).exists():
-            raise serializers.ValidationError("This email is already in use.")
-        return value
+    # def validate_email(self, value):
+    #     user = self.context['request'].user.professor
+    #     if Professor.objects.exclude(pk=Professor.pk).filter(email=value).exists():
+    #         raise serializers.ValidationError("This email is already in use.")
+    #     return value
     
     def update(self, instance, validated_data):
         user = instance.user
         user.first_name = validated_data.get("first_name", user.first_name)
         user.last_name = validated_data.get("last_name", user.last_name)
+        user.email = validated_data.get("email", user.email)
         if 'new_password' in validated_data:
             user.set_password(validated_data['new_password'])
         user.save()
@@ -88,8 +100,8 @@ class ProfessorProfileUpdateSerializer(serializers.Serializer):
         instance.last_name = validated_data.get("last_name", instance.last_name)
         instance.personnel_code = validated_data.get("personnel_code", instance.personnel_code)
         instance.national_id = validated_data.get("national_id", instance.national_id)
+        instance.email = validated_data.get("email", instance.email)
         instance.save()
-
         return instance
     
 

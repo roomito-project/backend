@@ -26,18 +26,22 @@ class ProfessorRegisterView(APIView):
                 description="Successful registration",
                 examples=[
                     OpenApiExample(
-                        name="Success example",
-                        value={"message": "The verification code and temporary password have been sent to the email."},
+                        name="Success",
+                        value={"message": "The temporary password has been sent to the email."},
                     )
                 ]
             ),
             400: OpenApiResponse(
                 response=ErrorResponseSerializer,
-                description="Invalid registration data",
+                description="validation error",
                 examples=[
                     OpenApiExample(
-                        name="InvalidData",
-                        value={"error": "Invalid data provided."},
+                        "Invalid National ID",
+                        value={"national_id": ["National ID must be exactly 10 digits."]}
+                    ),
+                    OpenApiExample(
+                        "Invalid Personnel Code",
+                        value={"personnel_code": ["Personnel code cannot be more than 10 characters."]}
                     )
                 ]
             ),
@@ -53,7 +57,7 @@ class ProfessorRegisterView(APIView):
             ),
             500: OpenApiResponse(
                 response=ErrorResponseSerializer,
-                description="Email sending failed",
+                description="Server error while sending email",
                 examples=[
                     OpenApiExample(
                         name="EmailSendError",
@@ -73,27 +77,30 @@ class ProfessorRegisterView(APIView):
 
         try:
             professor = Professor.objects.get(
-                first_name__iexact=data['first_name'],
-                last_name__iexact=data['last_name'],
+                first_name__iexact=data['first_name'].strip(),
+                last_name__iexact=data['last_name'].strip(),
                 email__iexact=data['email'],
                 is_registered=False
             )
         except Professor.DoesNotExist:
             return Response({"error": "Professor not found or details do not match the registered data."}, status=status.HTTP_404_NOT_FOUND)
 
+        # professor.first_name = data['first_name']
+        # professor.last_name = data['last_name']
         professor.personnel_code = data['personnel_code']
         professor.national_id = data['national_id']
+        # professor.is_registered = True
         professor.save()
 
-        temp_password = get_random_string(length=12, allowed_chars='abcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*')
+        temp_password = get_random_string(length=10, allowed_chars='abcdefghijklmnopqrstuvwxyz!@#$%^&*')
 
-        cache.set(f"professor_password_{data['email']}", temp_password, timeout=600) 
+        cache.set(f"prof_tmp_pass_{professor.personnel_code}", temp_password)
 
         try:
             send_mail(
-                subject="رمز موقت ثبت‌نام در رومیتو",
-                message=f"به رومیتو خوش آمدید\nرمز موقت شما: {temp_password}\nلطفاً پس از ورود رمز خود را تغییر دهید.",
-                from_email="mahyajfri37@example.com",
+                subject="رمز موقت ثبت‌نام استاد در رومیتو",
+                message=f"استاد گرامی {professor.first_name} {professor.last_name}،\nبه رومیتو خوش آمدید\nرمز موقت شما: {temp_password}\nلطفاً پس از ورود، رمز عبور خود را تغییر دهید.",
+                from_email="mahyajfri37@gmail.com",
                 recipient_list=[professor.email],
                 fail_silently=False
             )
@@ -131,6 +138,10 @@ class ProfessorProfileUpdateView(APIView):
                     name="ValidationError",
                     value={"national_code": ["This national code is already in use."]}
                 ),
+                # OpenApiExample(
+                #     name="ValidationError",
+                #     value={"email": ["This email is already in use."]}
+                # ),
                 OpenApiExample(
                     name="MissingCurrentPassword",
                     value={"current_password": ["Current password is required to change password."]}

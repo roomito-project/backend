@@ -15,7 +15,6 @@ from .serializers import (
     StudentProfileSerializer
 )
 
-
 class StudentRegisterView(APIView):
     parser_classes = [MultiPartParser, FormParser]
 
@@ -31,30 +30,35 @@ class StudentRegisterView(APIView):
                         value={
                             "message": "The student has been successfully registered. Please wait for the confirmation of the card photo.",
                             "student_id": 42
-                        },
-                        response_only=True
+                        }
                     )
                 ]
             ),
             400: OpenApiResponse(
                 response=ErrorResponseSerializer,
-                description="Invalid data or format",
+                description="Validation error",
                 examples=[
                     OpenApiExample(
-                        name="InvalidData",
-                        value={"error": "One or more fields are invalid."},
-                        response_only=True
+                        name="InvalidNationalID",
+                        value={"national_id": ["National ID must be exactly 10 digits."]}
+                    ),
+                    OpenApiExample(
+                        name="InvalidStudentID",
+                        value={"student_id": ["Student ID must not exceed 12 digits."]}
                     )
                 ]
             ),
             409: OpenApiResponse(
                 response=ErrorResponseSerializer,
-                description="Duplicate email or student ID",
+                description="Conflict - duplicate data",
                 examples=[
+                    # OpenApiExample(
+                    #     name="DuplicateEmail",
+                    #     value={"error": "Email already exists."}
+                    # ),
                     OpenApiExample(
-                        name="Conflict",
-                        value={"error": "Email or student ID already exists."},
-                        response_only=True
+                        name="DuplicateStudentID",
+                        value={"error": "Student ID already exists."}
                     )
                 ]
             ),
@@ -63,14 +67,13 @@ class StudentRegisterView(APIView):
                 description="Unexpected server error",
                 examples=[
                     OpenApiExample(
-                        name="UnexpectedError",
-                        value={"error": "An unexpected error occurred."},
-                        response_only=True
+                        name="ServerError",
+                        value={"error": "An unexpected error occurred."}
                     )
                 ]
             ),
         },
-        description="Student registeration by student card photo and etc."
+        description="Register a student with validation for Student ID and National ID."
     )
     def post(self, request):
         serializer = StudentRegistrationSerializer(data=request.data)
@@ -80,12 +83,6 @@ class StudentRegisterView(APIView):
         data = serializer.validated_data
 
         try:
-            if User.objects.filter(email=data["email"]).exists():
-                return Response({"error": "Email already exists."}, status=status.HTTP_409_CONFLICT)
-
-            if User.objects.filter(username=data["student_id"]).exists() or Student.objects.filter(student_id=data["student_id"]).exclude(id__isnull=True).exists():
-                return Response({"error": "Student ID already exists."}, status=status.HTTP_409_CONFLICT)
-
             user = User.objects.create_user(
                 username=data["student_id"],
                 email=data["email"],
@@ -99,8 +96,8 @@ class StudentRegisterView(APIView):
                 student_id=data["student_id"],
                 national_id=data["national_id"],
                 student_card_photo=data["student_card_photo"],
-            )
-
+            )  
+        
             return Response({
                 "message": "The student has been successfully registered. Please wait for the confirmation of the card photo.",
                 "student_id": student.id
@@ -108,7 +105,7 @@ class StudentRegisterView(APIView):
 
         except Exception:
             return Response({"error": "An unexpected error occurred."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
- 
+
     
 class StudentProfileUpdateView(APIView):
     permission_classes = [IsAuthenticated]

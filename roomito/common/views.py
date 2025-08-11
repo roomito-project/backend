@@ -6,10 +6,9 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from django.core.cache import cache
 from professors.models import Professor
 from students.models import Student
-from space_managers.models import SpaceManager
-from .serializers import UnifiedLoginSerializer
 from drf_spectacular.utils import extend_schema, OpenApiExample, OpenApiResponse
 from .serializers import UnifiedLoginSerializer, TokenResponseSerializer, ErrorResponseSerializer
+
 
 class UnifiedLoginView(APIView):
     @extend_schema(
@@ -21,7 +20,7 @@ class UnifiedLoginView(APIView):
                 examples=[
                     OpenApiExample(
                         "LoginSuccess",
-                        value={"access": "access_token", "refresh": "refresh_token"},
+                        value={"access": "access_token", "refresh": "refresh_token", "role": "professor"},
                         response_only=True
                     )
                 ]
@@ -31,13 +30,8 @@ class UnifiedLoginView(APIView):
                 description="Missing fields or invalid input format",
                 examples=[
                     OpenApiExample(
-                        "MissingFields",
-                        value={"role": ["This field is required."]},
-                        response_only=True
-                    ),
-                    OpenApiExample(
-                        "InvalidChoice",
-                        value={"role": ["\"admin\" is not a valid choice."]},
+                        "InvalidRole",
+                        value={"error": "Invalid role. Must be one of: professor, student, space_manager."},
                         response_only=True
                     )
                 ]
@@ -46,90 +40,109 @@ class UnifiedLoginView(APIView):
                 response=ErrorResponseSerializer,
                 description="Unauthorized – invalid credentials or account status",
                 examples=[
-                    OpenApiExample(
-                        "ProfessorNotRegistered",
-                        value={"error": "Invalid personnel code or password."},
-                        response_only=True
-                    ),
-                    OpenApiExample(
-                        "StudentNotApproved",
-                        value={"error": "Your student card is not yet approved."},
-                        response_only=True
-                    ),
-                    OpenApiExample(
-                        "SpaceManagerMissing",
-                        value={"error": "User is not a space manager."},
-                        response_only=True
-                    )
+                    OpenApiExample("InvalidCredentials", value={"error": "Invalid credentials."}, response_only=True),
+                    OpenApiExample("StudentNotApproved", value={"error": "Your student card is not yet approved."}, response_only=True),
+                    OpenApiExample("NotSpaceManager", value={"error": "User is not a space manager."}, response_only=True),
                 ]
             ),
             500: OpenApiResponse(
                 response=ErrorResponseSerializer,
                 description="Internal Server Error – token generation failed",
                 examples=[
-                    OpenApiExample(
-                        "TokenGenerationError",
-                        value={"error": "Failed to generate token."},
-                        response_only=True
-                    )
+                    OpenApiExample("TokenGenerationError", value={"error": "Failed to generate token."}, response_only=True)
                 ]
             )
         },
         description="Unified login for professors, students, and space managers (use personnel code for professor and student id for student as usernames)."
     )
-
     def post(self, request):
         serializer = UnifiedLoginSerializer(data=request.data)
         if not serializer.is_valid():
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-        role = serializer.validated_data['role']
-        username = serializer.validated_data['username']
-        password = serializer.validated_data['password']
+        role = (serializer.validated_data['role'] or '').strip().lower()
+        username = (serializer.validated_data['username'] or '').strip()
+        password = serializer.validated_data['password'] 
 
         try:
             if role == 'professor':
-                professor = Professor.objects.get(personnel_code=username)
-                email = professor.email
-                if not professor.is_registered:
-                    cached_password = cache.get(f"professor_password_{email}")
-                    if cached_password == password:
-                        user = User.objects.create_user(username=username, password=password)
-                        professor.user = user
-                        professor.is_registered = True
-                        professor.save()
-                        cache.delete(f"professor_password_{email}")
-                    else:
-                        raise Exception("Invalid personnel code or password.")
+                try:
+                    professor = Professor.objects.get(personnel_code=username)
+                except Professor.DoesNotExist:
+                    return Response({"error": "Invalid credentials."}, status=status.HTTP_401_UNAUTHORIZED)
+
+                user = professor.user
+
+                if user is None:
+                    cached_pw = cache.get(f"professor_password_{professor.email}") or \
+                                cache.get(f"professor_password_{professor.personnel_code}") or \
+                                cache.get(f"prof_tmp_pass_{professor.personnel_code}")
+
+                    if not cached_pw or cached_pw != password:
+                        return Response({"error": "Invalid credentials."}, status=status.HTTP_401_UNAUTHORIZED)
+
+                    user = User.objects.create_user(
+                        username=professor.personnel_code,
+                        password=password,
+                        first_name=professor.first_name,
+                        last_name=professor.last_name,
+                        email=professor.email,
+                    )
+                    professor.user = user
+                    professor.is_registered = True
+                    professor.save(update_fields=['user', 'is_registered'])
+
+                    cache.delete(f"professor_password_{professor.email}")
+                    cache.delete(f"professor_password_{professor.personnel_code}")
+                    cache.delete(f"prof_tmp_pass_{professor.personnel_code}")
+
                 else:
-                    user = professor.user
                     if not user.check_password(password):
-                        raise Exception("Invalid personnel code or password.")
+                        return Response({"error": "Invalid credentials."}, status=status.HTTP_401_UNAUTHORIZED)
 
             elif role == 'student':
-                user = User.objects.get(username=username)
+                try:
+                    user = User.objects.get(username=username)
+                except User.DoesNotExist:
+                    return Response({"error": "Invalid credentials."}, status=status.HTTP_401_UNAUTHORIZED)
+
                 if not hasattr(user, 'student_profile'):
-                    raise Exception("User is not a student.")
+                    return Response({"error": "Invalid credentials."}, status=status.HTTP_401_UNAUTHORIZED)
+
                 if not user.student_profile.is_approved:
-                    raise Exception("Your student card is not yet approved.")
+                    return Response({"error": "Your student card is not yet approved."}, status=status.HTTP_401_UNAUTHORIZED)
+
                 if not user.check_password(password):
-                    raise Exception("Invalid username or password.")
+                    return Response({"error": "Invalid credentials."}, status=status.HTTP_401_UNAUTHORIZED)
 
             elif role == 'space_manager':
-                user = User.objects.get(username=username)
+                try:
+                    user = User.objects.get(username=username)
+                except User.DoesNotExist:
+                    return Response({"error": "Invalid credentials."}, status=status.HTTP_401_UNAUTHORIZED)
+
                 if not hasattr(user, 'spacemanager'):
-                    raise Exception("User is not a space manager.")
+                    return Response({"error": "User is not a space manager."}, status=status.HTTP_401_UNAUTHORIZED)
+
                 if not user.check_password(password):
-                    raise Exception("Invalid username or password.")
+                    return Response({"error": "Invalid credentials."}, status=status.HTTP_401_UNAUTHORIZED)
 
             else:
-                return Response({"error": "Invalid role."}, status=status.HTTP_400_BAD_REQUEST)
+                return Response(
+                    {"error": "Invalid role. Must be one of: professor, student, space_manager."},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
 
-            refresh = RefreshToken.for_user(user)
+            try:
+                refresh = RefreshToken.for_user(user)
+            except Exception:
+                return Response({"error": "Failed to generate token."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
             return Response({
                 "access": str(refresh.access_token),
                 "refresh": str(refresh),
+                "role": role,
             }, status=status.HTTP_200_OK)
 
-        except Exception as e:
-            return Response({"error": str(e)}, status=status.HTTP_401_UNAUTHORIZED)
+        except Exception:
+            return Response({"error": "Invalid credentials."}, status=status.HTTP_401_UNAUTHORIZED)

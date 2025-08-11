@@ -24,7 +24,6 @@ class TokenResponseSerializer(serializers.Serializer):
     access = serializers.CharField()
     refresh = serializers.CharField()
 
-
 class StudentRegistrationSerializer(serializers.Serializer):
     first_name = serializers.CharField()
     last_name = serializers.CharField()
@@ -37,38 +36,29 @@ class StudentRegistrationSerializer(serializers.Serializer):
     def validate_password(self, value):
         validate_password_strength(value)
         return value
-    
+
+    def validate_student_id(self, value):
+        if not value.isdigit():
+            raise serializers.ValidationError("Student ID must be numeric.")
+        if len(value) > 12:
+            raise serializers.ValidationError("Student ID cannot be more than 12 digits.")
+        return value
+
+    def validate_national_id(self, value):
+        if not value.isdigit():
+            raise serializers.ValidationError("National ID must be numeric.")
+        if len(value) != 10:
+            raise serializers.ValidationError("National ID must be exactly 10 digits.")
+        return value
+
+
     def validate(self, data):
-        if not data.get('first_name'):
-            raise serializers.ValidationError({"first_name": _("First name is required.")})
-        if not data.get('last_name'):
-            raise serializers.ValidationError({"last_name": _("Last name is required.")})
-        if not data.get('email'):
-            raise serializers.ValidationError({"email": _("Email is required.")})
-        if not data.get('password'):
-            raise serializers.ValidationError({"password": _("Password is required.")})
-        if not data.get('student_id'):
-            raise serializers.ValidationError({"student_id": _("Student ID is required.")})
-        if not data.get('national_id'):
-            raise serializers.ValidationError({"national_id": _("National ID is required.")})
-        if not data.get('student_card_photo'):
-            raise serializers.ValidationError({"student_card_photo": _("Student card photo is required.")})
-
-        if not data['national_id'].isdigit():
-            raise serializers.ValidationError({"national_id": _("National ID must be numeric.")})
-
-        if not data['student_id'].isdigit():
-            raise serializers.ValidationError({"student_id": _("Student ID must be numeric.")})
-
-        if User.objects.filter(email=data['email']).exists():
-            raise serializers.ValidationError({"email": _("This email is already registered.")})
-
+        # if User.objects.filter(email=data['email']).exists():
+        #     raise serializers.ValidationError({"email": "This email is already registered."})
         if User.objects.filter(username=data['student_id']).exists() or Student.objects.filter(student_id=data['student_id']).exists():
-            raise serializers.ValidationError({"student_id": _("This student ID is already in use.")})
-
+            raise serializers.ValidationError({"student_id": "This student ID is already in use."})
         if not data['student_card_photo'].content_type.startswith('image/'):
-            raise serializers.ValidationError({"student_card_photo": _("Only image files are allowed.")})
-
+            raise serializers.ValidationError({"student_card_photo": "Only image files are allowed."})
         return data
 
 
