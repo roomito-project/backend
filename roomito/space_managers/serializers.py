@@ -108,6 +108,9 @@ class SpaceListSerializer(serializers.ModelSerializer):
     
 
 class SpaceSerializer(serializers.ModelSerializer):
+    space_manager = SpaceManagerProfileSerializer()
+    features = SpaceFeatureSerializer(many=True)
+
     class Meta:
         model = Space
         fields = ['id', 'name', 'address', 'capacity', 'description', 'space_manager', 'features']
@@ -192,45 +195,69 @@ class EventDetailSerializer(serializers.ModelSerializer):
 
 
 class ScheduleSerializer(serializers.ModelSerializer):
+    start_time = serializers.TimeField(format='%H:%M:%S', input_formats=['%H:%M:%S'])
+    end_time   = serializers.TimeField(format='%H:%M:%S', input_formats=['%H:%M:%S'])
     class Meta:
         model = Schedule
         fields = ['start_time', 'end_time', 'date']
 
 
 class ReservationCreateSerializer(serializers.ModelSerializer):
+    phone_number = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        max_length=11,
+        min_length=11,
+        error_messages={
+            'max_length': 'Phone number must be exactly 11 digits.',
+            'min_length': 'Phone number must be exactly 11 digits.'
+        }
+    )
+     
     schedule = ScheduleSerializer()
 
     class Meta:
         model = Reservation
-        fields = ['id', 'space', 'reservation_type', 'reservee_type', 'student', 'professor', 'description', 'status', 'schedule']
-        read_only_fields = ['id', 'status', 'student', 'professor']
+        fields = [
+            'id', 'space', 'reservation_type', 'reservee_type',
+            'student', 'professor', 'phone_number', 'description', 'status', 'schedule'
+        ]
+        read_only_fields = ['id', 'status', 'space', 'reservee_type', 'student', 'professor']
 
     def validate(self, data):
         user = self.context['request'].user
 
-        if data['reservee_type'] == 'student' and not hasattr(user, 'student'):
-            raise serializers.ValidationError({"reservee_type": "You must be a student to select this reservee type."})
-        if data['reservee_type'] == 'professor' and not hasattr(user, 'professor'):
-            raise serializers.ValidationError({"reservee_type": "You must be a professor to select this reservee type."})
-
-        if data['reservee_type'] == 'student':
-            data['student'] = user.student
+        if hasattr(user, 'student_profile'):
+            data['reservee_type'] = 'student'
+            data['student'] = user.student_profile
             data['professor'] = None
-        elif data['reservee_type'] == 'professor':
+        elif hasattr(user, 'professor'):
+            data['reservee_type'] = 'professor'
             data['professor'] = user.professor
             data['student'] = None
+        else:
+            raise serializers.ValidationError("You must be a student or professor to create a reservation.")
 
+        if data.get('phone_number'):
+            if not data['phone_number'].isdigit() or len(data['phone_number']) != 11:
+                raise serializers.ValidationError({"phone_number": "Phone number must be exactly 11 digits."})
+            
         schedule_data = data['schedule']
-        if schedule_data['start_time'] >= schedule_data['end_time']:
+        start = schedule_data['start_time']
+        end   = schedule_data['end_time']
+
+        if start == end:
+            raise serializers.ValidationError({"schedule": "Start and end time cannot be the same."})
+        if start > end:
             raise serializers.ValidationError({"schedule": "Start time must be before end time."})
 
         return data
 
     def create(self, validated_data):
         schedule_data = validated_data.pop('schedule')
-        space = validated_data['space']
+        space = self.context['space']
         schedule = Schedule.objects.create(space=space, **schedule_data)
-        reservation = Reservation.objects.create(schedule=schedule, **validated_data)
+        reservation = Reservation.objects.create(space=space, schedule=schedule, **validated_data)
         return reservation
   
 
@@ -241,10 +268,23 @@ class ReservationListSerializer(serializers.ModelSerializer):
     end_time = serializers.TimeField(source='schedule.end_time')
     status_display = serializers.CharField(source='get_status_display') 
     reservee_name = serializers.SerializerMethodField()
+    phone_number = serializers.CharField() 
+    reservee_type = serializers.SerializerMethodField()
 
     class Meta:
         model = Reservation
-        fields = ['id', 'space_name', 'date', 'start_time', 'end_time', 'status_display', 'reservation_type', 'description', 'reservee_name']
+        fields = ['id', 'space_name', 'date', 'start_time', 'end_time', 'status_display', 'reservation_type', 'description', 'reservee_name', 'reservee_type', 'phone_number']
 
     def get_reservee_name(self, obj):
-        return obj.student.first_name if obj.student else obj.professor.first_name if obj.professor else "unknown"    
+        if obj.student:
+            return f"{obj.student.first_name} {obj.student.last_name}"
+        elif obj.professor:
+            return f"{obj.professor.first_name} {obj.professor.last_name}"
+        return "unknown"   
+    
+    def get_reservee_type(self, obj):
+        if obj.student:
+            return "student"
+        elif obj.professor:
+            return "professor"
+        return "unknown" 

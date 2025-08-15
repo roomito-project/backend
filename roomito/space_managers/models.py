@@ -30,6 +30,7 @@ class Space(models.Model):
     name = models.CharField(max_length=100)
     address = models.TextField()
     capacity = models.IntegerField(validators=[MinValueValidator(1)])
+    phone_number = models.CharField(max_length=11, null=True, blank=True)
     description = models.TextField(default="no description")
     space_manager = models.ForeignKey(
         SpaceManager,
@@ -53,14 +54,15 @@ class Schedule(models.Model):
         return f"{self.space.name} - {self.date} - {self.start_time} till {self.end_time}"
 
     def clean(self):
-        if self.end_time <= self.start_time:
-            raise ValidationError("The end time must be after the start time.")
+        if self.end_time == self.start_time:
+            raise ValidationError("Start and end time cannot be the same.")
+        if self.end_time < self.start_time:
+            raise ValidationError("End time must be after start time.")
 
-        existing_schedules = Schedule.objects.filter(space=self.space, date=self.date).exclude(id=self.id)
-        for schedule in existing_schedules:
-            if self.start_time < schedule.end_time and self.end_time > schedule.start_time:
-                raise ValidationError("This time conflicts with another schedule on the same date.")
-
+        existing = Schedule.objects.filter(space=self.space, date=self.date).exclude(pk=self.pk)
+        if existing.filter(start_time__lt=self.end_time, end_time__gt=self.start_time).exists():
+            raise ValidationError("This time conflicts with another schedule on the same date.")
+        
     def save(self, *args, **kwargs):
         self.clean()
         super().save(*args, **kwargs)
@@ -88,6 +90,7 @@ class Reservation(models.Model):
     reservee_type = models.CharField(max_length=20, choices=RESERVEE_TYPES)
     student = models.ForeignKey(Student, on_delete=models.SET_NULL, null=True, blank=True)
     professor = models.ForeignKey(Professor, on_delete=models.SET_NULL, null=True, blank=True)
+    phone_number = models.CharField(max_length=11, null=True, blank=True)
     description = models.CharField(max_length=255, default='no description')
     status = models.CharField(max_length=20, choices=STATUSES, default='under_review')
     space = models.ForeignKey(Space, on_delete=models.SET_NULL, null=True, blank=True)
@@ -106,7 +109,9 @@ class Reservation(models.Model):
             raise ValueError("For the student reservee type, you must select a student.")
         if self.reservee_type == 'professor' and not self.professor:
             raise ValueError("For the professor reservee type, you must select a professor.")
+        self.clean()
         super().save(*args, **kwargs)
+
 
 class Event(models.Model):
     EVENT_TYPES = (

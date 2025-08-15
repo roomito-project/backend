@@ -26,7 +26,7 @@ class IsSpaceManagerUser(IsAuthenticated):
         return super().has_permission(request, view) and hasattr(request.user, 'spacemanager')
     
     
-@extend_schema(tags=['auth'])
+@extend_schema(tags=['space_manager'])
 class SpaceManagerProfileView(APIView):
     permission_classes = [IsSpaceManagerUser]
     @extend_schema(
@@ -505,6 +505,7 @@ class ReservationCreateView(APIView):
                         value={
                             "reservation_type": "class",
                             "reservee_type": "student",
+                            "phone_number": "09123456789",
                             "description": "stirng",
                             "schedule": {
                                 "start_time": "09:00:00",
@@ -520,8 +521,13 @@ class ReservationCreateView(APIView):
                 description="Invalid data provided (e.g., invalid time range or missing required fields).",
                 examples=[
                     OpenApiExample(
+                    name="SameTime",
+                    value={"schedule": "Start and end time cannot be the same."},
+                    response_only=True
+                    ),
+                    OpenApiExample(
                         name="BadRequest",
-                        value={"error": "Start time must be before end time."}
+                        value={"shcedule": "Start time must be before end time."}
                     ),
                     OpenApiExample(
                         name="ValidationError",
@@ -586,7 +592,11 @@ class ReservationCreateView(APIView):
         request_data = request.data.copy()
         request_data['space'] = space.id
 
-        serializer = ReservationCreateSerializer(data=request_data, context={'request': request})
+        serializer = ReservationCreateSerializer(
+            data=request_data,
+            context={'request': request, 'space': space}
+        )
+        
         if not serializer.is_valid():
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
