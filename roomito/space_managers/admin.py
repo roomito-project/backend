@@ -4,7 +4,11 @@ from django.contrib.auth.models import User
 from django.utils.crypto import get_random_string
 from django.core.mail import send_mail
 
-admin.site.register(Space)
+@admin.register(Space)
+class SpaceManagerAdmin(admin.ModelAdmin):
+    list_display = ("id", "name", "space_manager")
+    search_fields = ("id", "name", "space_manager")
+    
 admin.site.register(Reservation)
 admin.site.register(Schedule)
 admin.site.register(Event)
