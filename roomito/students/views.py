@@ -15,6 +15,7 @@ from .serializers import (
     StudentProfileSerializer
 )
 
+@extend_schema(tags=['auth'])
 class StudentRegisterView(APIView):
     parser_classes = [MultiPartParser, FormParser]
 
@@ -106,7 +107,8 @@ class StudentRegisterView(APIView):
         except Exception:
             return Response({"error": "An unexpected error occurred."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-    
+
+@extend_schema(tags=['student'])    
 class StudentProfileUpdateView(APIView):
     permission_classes = [IsAuthenticated]
     
@@ -177,6 +179,7 @@ class StudentProfileUpdateView(APIView):
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     
 
+@extend_schema(tags=['student'])
 class StudentProfileView(APIView):
     permission_classes = [IsAuthenticated]
 

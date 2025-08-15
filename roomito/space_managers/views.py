@@ -3,8 +3,9 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework import status
 from drf_spectacular.utils import extend_schema, OpenApiResponse, OpenApiExample, OpenApiParameter
-from .models import Space, Event, SpaceFeature
+from .models import Reservation, Space, Event, SpaceFeature, ReservationNotification, SpaceManager
 from django.shortcuts import get_object_or_404
+from django.core.mail import send_mail
 from .serializers import (
     ErrorResponseSerializer,
     SpaceUpdateFeatureSerializer,
@@ -16,6 +17,8 @@ from .serializers import (
     SpaceManagerProfileUpdateSerializer,
     SpaceFeatureSerializer,
     SpaceUpdateFeatureSerializer,
+    ReservationCreateSerializer,
+    ReservationListSerializer
 )
 
 class IsSpaceManagerUser(IsAuthenticated):
@@ -23,6 +26,7 @@ class IsSpaceManagerUser(IsAuthenticated):
         return super().has_permission(request, view) and hasattr(request.user, 'spacemanager')
     
     
+@extend_schema(tags=['auth'])
 class SpaceManagerProfileView(APIView):
     permission_classes = [IsSpaceManagerUser]
     @extend_schema(
@@ -68,6 +72,7 @@ class SpaceManagerProfileView(APIView):
         return Response(serializer.data, status=status.HTTP_200_OK)
   
     
+@extend_schema(tags=['space_manager'])    
 class SpaceManagerProfileUpdateView(APIView):
     permission_classes = [IsSpaceManagerUser]
     
@@ -133,7 +138,8 @@ class SpaceManagerProfileUpdateView(APIView):
             return Response({"message": "Profile updated successfully."}, status=status.HTTP_200_OK)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     
-    
+
+@extend_schema(tags=['space'])      
 class SpaceListView(APIView):
     permission_classes = [IsAuthenticated]
 
@@ -189,6 +195,7 @@ class SpaceListView(APIView):
         return Response(serializer.data, status=status.HTTP_200_OK)
 
 
+@extend_schema(tags=['event'])      
 class EventListView(APIView):
     permission_classes = [IsAuthenticated]
 
@@ -279,7 +286,8 @@ class EventListView(APIView):
         except Exception as e:
             return Response({"error": "An unexpected server error occurred."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)        
   
-
+  
+@extend_schema(tags=['event'])      
 class EventDetailView(APIView):
     permission_classes = [IsAuthenticated]
 
@@ -334,7 +342,8 @@ class EventDetailView(APIView):
         serializer = EventDetailSerializer(event)
         return Response(serializer.data, status=200)
 
-        
+  
+@extend_schema(tags=['space'])        
 class SpaceFeatureView(APIView):
     permission_classes = [IsSpaceManagerUser]
 
@@ -392,6 +401,7 @@ class SpaceFeatureView(APIView):
         }, status=status.HTTP_200_OK)
     
     
+@extend_schema(tags=['space'])    
 class SpaceUpdateFeatureView(APIView):
     permission_classes = [IsSpaceManagerUser]
 
@@ -476,5 +486,202 @@ class SpaceUpdateFeatureView(APIView):
 
         space.save()
         return Response({"message": "Feature updated successfully.", "updated_features": [f.name for f in space.features.all()]}, status=status.HTTP_200_OK)   
-    
-  
+
+
+@extend_schema(tags=['reservation'])
+class ReservationCreateView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(
+        description="Create a reservation request for a specific space by authenticated user (student or professor).",
+        request=ReservationCreateSerializer,
+        responses={
+            201: OpenApiResponse(
+                response=ReservationCreateSerializer,
+                description="Reservation request created successfully and sent to space manager for review.",
+                examples=[
+                    OpenApiExample(
+                        name="Success",
+                        value={
+                            "reservation_type": "class",
+                            "reservee_type": "student",
+                            "description": "stirng",
+                            "schedule": {
+                                "start_time": "09:00:00",
+                                "end_time": "11:00:00",
+                                "date": "2025-08-15"
+                            }
+                        }
+                    )
+                ]
+            ),
+            400: OpenApiResponse(
+                response=ErrorResponseSerializer,
+                description="Invalid data provided (e.g., invalid time range or missing required fields).",
+                examples=[
+                    OpenApiExample(
+                        name="BadRequest",
+                        value={"error": "Start time must be before end time."}
+                    ),
+                    OpenApiExample(
+                        name="ValidationError",
+                        value={"reservee_type": ["You must be a student to select this reservee type."]}
+                    )
+                ]
+            ),
+            401: OpenApiResponse(
+                response=ErrorResponseSerializer,
+                description="User is not authenticated.",
+                examples=[
+                    OpenApiExample(
+                        name="Unauthorized",
+                        value={"error": "Authentication credentials were not provided."}
+                    )
+                ]
+            ),
+            404: OpenApiResponse(
+                response=ErrorResponseSerializer,
+                description="Space not found.",
+                examples=[
+                    OpenApiExample(
+                        name="NotFound",
+                        value={"error": "Space not found."}
+                    )
+                ]
+            ),
+            409: OpenApiResponse(
+                response=ErrorResponseSerializer,
+                description="Time conflict with existing reservations.",
+                examples=[
+                    OpenApiExample(
+                        name="Conflict",
+                        value={"error": "This time conflicts with another schedule on the same date."}
+                    )
+                ]
+            ),
+            422: OpenApiResponse(
+                response=ErrorResponseSerializer,
+                description="Unprocessable entity (e.g., invalid reservation type or reservee type).",
+                examples=[
+                    OpenApiExample(
+                        name="Unprocessable",
+                        value={"reservation_type": ["Invalid reservation type."]}
+                    )
+                ]
+            ),
+            500: OpenApiResponse(
+                response=ErrorResponseSerializer,
+                description="Internal server error (e.g., database failure).",
+                examples=[
+                    OpenApiExample(
+                        name="ServerError",
+                        value={"error": "An unexpected error occurred."}
+                    )
+                ]
+            )
+        }
+    )        
+    def post(self, request, space_id):
+        space = get_object_or_404(Space, id=space_id)
+        request_data = request.data.copy()
+        request_data['space'] = space.id
+
+        serializer = ReservationCreateSerializer(data=request_data, context={'request': request})
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            reservation = serializer.save()
+
+            if space.space_manager and space.space_manager.email:
+                send_mail(
+                    subject='درخواست رزرو جدید',
+                    message=f'درخواستی جدید برای رزرو {space.name} در تاریخ {reservation.schedule.date} از ساعت {reservation.schedule.start_time} تا {reservation.schedule.end_time} ثبت شده است. لطفاً آن را بررسی کنید.',
+                    from_email="mahyajfri37@gmail.com",
+                    recipient_list=[space.space_manager.email],
+                    fail_silently=True,
+                )
+
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+        except ValueError as e:
+            return Response({"error": str(e)}, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
+        except Exception as e:
+            return Response({"error": "An unexpected error occurred."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+        
+@extend_schema(tags=['space_manager'])
+class ManagerReservationListView(APIView):
+    permission_classes = [IsSpaceManagerUser]
+
+    @extend_schema(
+        description="Retrieve the list of reservation requests for spaces managed by the authenticated space manager.",
+        responses={
+            200: OpenApiResponse(
+                response=ReservationListSerializer(many=True),
+                description="List of reservation requests successfully retrieved.",
+                examples=[
+                    OpenApiExample(
+                        name="Success",
+                        value=[
+                            {
+                                "id": 1,
+                                "space_name": "string",
+                                "date": "2025-08-15",
+                                "start_time": "09:00:00",
+                                "end_time": "11:00:00",
+                                "status_display": "Under Review", 
+                                "reservation_type": "string",
+                                "description": "string",
+                                "reservee_name": "string"
+                            }
+                        ]
+                    )
+                ]
+            ),
+            401: OpenApiResponse(
+                response=ErrorResponseSerializer,
+                description="User is not authenticated.",
+                examples=[
+                    OpenApiExample(
+                        name="Unauthorized",
+                        value={"error": "Authentication credentials were not provided."}
+                    )
+                ]
+            ),
+            403: OpenApiResponse(
+                response=ErrorResponseSerializer,
+                description="User is not a space manager or has no managed spaces.",
+                examples=[
+                    OpenApiExample(
+                        name="Forbidden",
+                        value={"error": "You are not authorized to view this list."}
+                    )
+                ]
+            ),
+            500: OpenApiResponse(
+                response=ErrorResponseSerializer,
+                description="Internal server error.",
+                examples=[
+                    OpenApiExample(
+                        name="ServerError",
+                        value={"error": "An unexpected error occurred."}
+                    )
+                ]
+            )
+        }
+    )
+    def get(self, request):
+        user = request.user
+        try:
+            space_manager = user.spacemanager 
+        except SpaceManager.DoesNotExist:
+            return Response({"error": "You are not authorized to view this list."}, status=status.HTTP_403_FORBIDDEN)
+
+        managed_spaces = Space.objects.filter(space_manager=space_manager)
+        if not managed_spaces.exists():
+            return Response({"message": "No spaces managed by you."}, status=status.HTTP_200_OK)
+
+        reservations = Reservation.objects.filter(space__in=managed_spaces).select_related('schedule', 'space', 'student', 'professor')
+        serializer = ReservationListSerializer(reservations, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)

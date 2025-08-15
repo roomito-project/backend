@@ -134,6 +134,15 @@ SPECTACULAR_SETTINGS = {
     'DESCRIPTION': 'APIs for space reservation system',
     'VERSION': '1.0.0',
     'COMPONENT_SPLIT_REQUEST': True,
+    'TAGS': [
+        {'name': 'auth', 'description': 'Authentication and registration endpoints'},
+        {'name': 'space_manager', 'description': 'Endpoints for space managers'},
+        {'name': 'space', 'description': 'Endpoints for spaces'},
+        {'name': 'professor', 'description': 'Endpoints for professors'},
+        {'name': 'student', 'description': 'Endpoints for students'},
+        {'name': 'reservation', 'description': 'Endpoints for reservations'},
+        {'name': 'event', 'description': 'Endpoints for events'},
+    ],
 }
 
 

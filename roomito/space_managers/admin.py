@@ -12,7 +12,7 @@ admin.site.register(SpaceFeature)
 
 @admin.register(SpaceManager)
 class SpaceManagerAdmin(admin.ModelAdmin):
-    list_display = ("first_name", "last_name", "username", "email")
+    list_display = ("id", "first_name", "last_name", "username", "email")
     search_fields = ("first_name", "last_name", "username", "email")
     exclude = ("user",)
 

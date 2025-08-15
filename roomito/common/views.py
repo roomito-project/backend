@@ -9,7 +9,7 @@ from students.models import Student
 from drf_spectacular.utils import extend_schema, OpenApiExample, OpenApiResponse
 from .serializers import UnifiedLoginSerializer, TokenResponseSerializer, ErrorResponseSerializer
 
-
+@extend_schema(tags=['auth'])
 class UnifiedLoginView(APIView):
     @extend_schema(
         request=UnifiedLoginSerializer,

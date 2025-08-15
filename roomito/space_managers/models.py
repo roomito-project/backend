@@ -24,8 +24,8 @@ class SpaceFeature(models.Model):
 
     def __str__(self):
         return self.name
-    
-    
+
+
 class Space(models.Model):
     name = models.CharField(max_length=100)
     address = models.TextField()
@@ -41,6 +41,29 @@ class Space(models.Model):
 
     def __str__(self):
         return f"{self.name} (capacity: {self.capacity})"
+
+
+class Schedule(models.Model):
+    start_time = models.TimeField()
+    end_time = models.TimeField()
+    date = models.DateField(default=timezone.now)
+    space = models.ForeignKey(Space, on_delete=models.CASCADE)
+
+    def __str__(self):
+        return f"{self.space.name} - {self.date} - {self.start_time} till {self.end_time}"
+
+    def clean(self):
+        if self.end_time <= self.start_time:
+            raise ValidationError("The end time must be after the start time.")
+
+        existing_schedules = Schedule.objects.filter(space=self.space, date=self.date).exclude(id=self.id)
+        for schedule in existing_schedules:
+            if self.start_time < schedule.end_time and self.end_time > schedule.start_time:
+                raise ValidationError("This time conflicts with another schedule on the same date.")
+
+    def save(self, *args, **kwargs):
+        self.clean()
+        super().save(*args, **kwargs)
 
 
 class Reservation(models.Model):
@@ -60,14 +83,15 @@ class Reservation(models.Model):
         ('approved', 'Approved'),
         ('rejected', 'Rejected'),
     )
+
     reservation_type = models.CharField(max_length=20, choices=RESERVATION_TYPES)
     reservee_type = models.CharField(max_length=20, choices=RESERVEE_TYPES)
     student = models.ForeignKey(Student, on_delete=models.SET_NULL, null=True, blank=True)
     professor = models.ForeignKey(Professor, on_delete=models.SET_NULL, null=True, blank=True)
-    description = models.CharField(default='no description')
+    description = models.CharField(max_length=255, default='no description')
     status = models.CharField(max_length=20, choices=STATUSES, default='under_review')
     space = models.ForeignKey(Space, on_delete=models.SET_NULL, null=True, blank=True)
-    schedule = models.OneToOneField('Schedule', on_delete=models.CASCADE, null=True, blank=True, related_name='reservation_instance')
+    schedule = models.OneToOneField(Schedule, on_delete=models.CASCADE, null=True, blank=True, related_name='reservation_instance')
 
     def __str__(self):
         reservee_name = self.student.first_name if self.student else self.professor.first_name if self.professor else "unknown"
@@ -81,31 +105,8 @@ class Reservation(models.Model):
         if self.reservee_type == 'student' and not self.student:
             raise ValueError("For the student reservee type, you must select a student.")
         if self.reservee_type == 'professor' and not self.professor:
-            raise ValueError("For the type of the reservee, you must select a teacher.")
+            raise ValueError("For the professor reservee type, you must select a professor.")
         super().save(*args, **kwargs)
-
-class Schedule(models.Model):
-    start_time = models.TimeField()
-    end_time = models.TimeField()
-    date = models.DateField(default=timezone.now)
-    space = models.ForeignKey(Space, on_delete=models.CASCADE)
-    reservation = models.OneToOneField(Reservation, on_delete=models.CASCADE, related_name='schedule_instance')
-
-    def __str__(self):
-        return f"{self.space.name} - {self.date} - {self.start_time} till {self.end_time}"
-
-    def clean(self):
-        if self.end_time <= self.start_time:
-            raise ValidationError("The end time must be after the start time.")
-        existing_schedules = Schedule.objects.filter(space=self.space, date=self.date).exclude(id=self.id if self.id else None)
-        for schedule in existing_schedules:
-            if self.start_time < schedule.end_time and self.end_time > schedule.start_time:
-                raise ValidationError("This time conflicts with another schedule on the same date.")
-
-    def save(self, *args, **kwargs):
-        self.clean()
-        super().save(*args, **kwargs)
-        
 
 class Event(models.Model):
     EVENT_TYPES = (
@@ -142,3 +143,14 @@ class Event(models.Model):
         if self.student_organizer and self.professor_organizer:
             raise ValueError("You can only choose one organizer (student or teacher).")
         super().save(*args, **kwargs)
+
+
+class ReservationNotification(models.Model):
+    recipient = models.ForeignKey(User, on_delete=models.CASCADE, related_name='notifications')
+    message = models.TextField()
+    created_at = models.DateTimeField(auto_now_add=True)
+    is_read = models.BooleanField(default=False)
+    related_reservation = models.ForeignKey('Reservation', on_delete=models.SET_NULL, null=True, blank=True)
+
+    def __str__(self):
+        return f"Notification for {self.recipient.username} at {self.created_at}"        

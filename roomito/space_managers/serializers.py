@@ -1,6 +1,6 @@
 from rest_framework import serializers
 from django.contrib.auth.models import User
-from .models import Space, SpaceManager, Event, SpaceFeature
+from .models import Space, SpaceManager, Event, SpaceFeature, Schedule, Reservation
 from professors.models import Professor
 from students.models import Student
 from common.validators import validate_password_strength
@@ -189,4 +189,62 @@ class EventDetailSerializer(serializers.ModelSerializer):
             request = self.context.get('request')
             return request.build_absolute_uri(obj.poster.url) if request else obj.poster.url
         return None
-        
+
+
+class ScheduleSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Schedule
+        fields = ['start_time', 'end_time', 'date']
+
+
+class ReservationCreateSerializer(serializers.ModelSerializer):
+    schedule = ScheduleSerializer()
+
+    class Meta:
+        model = Reservation
+        fields = ['id', 'space', 'reservation_type', 'reservee_type', 'student', 'professor', 'description', 'status', 'schedule']
+        read_only_fields = ['id', 'status', 'student', 'professor']
+
+    def validate(self, data):
+        user = self.context['request'].user
+
+        if data['reservee_type'] == 'student' and not hasattr(user, 'student'):
+            raise serializers.ValidationError({"reservee_type": "You must be a student to select this reservee type."})
+        if data['reservee_type'] == 'professor' and not hasattr(user, 'professor'):
+            raise serializers.ValidationError({"reservee_type": "You must be a professor to select this reservee type."})
+
+        if data['reservee_type'] == 'student':
+            data['student'] = user.student
+            data['professor'] = None
+        elif data['reservee_type'] == 'professor':
+            data['professor'] = user.professor
+            data['student'] = None
+
+        schedule_data = data['schedule']
+        if schedule_data['start_time'] >= schedule_data['end_time']:
+            raise serializers.ValidationError({"schedule": "Start time must be before end time."})
+
+        return data
+
+    def create(self, validated_data):
+        schedule_data = validated_data.pop('schedule')
+        space = validated_data['space']
+        schedule = Schedule.objects.create(space=space, **schedule_data)
+        reservation = Reservation.objects.create(schedule=schedule, **validated_data)
+        return reservation
+  
+
+class ReservationListSerializer(serializers.ModelSerializer):
+    space_name = serializers.CharField(source='space.name')
+    date = serializers.DateField(source='schedule.date')
+    start_time = serializers.TimeField(source='schedule.start_time')
+    end_time = serializers.TimeField(source='schedule.end_time')
+    status_display = serializers.CharField(source='get_status_display') 
+    reservee_name = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Reservation
+        fields = ['id', 'space_name', 'date', 'start_time', 'end_time', 'status_display', 'reservation_type', 'description', 'reservee_name']
+
+    def get_reservee_name(self, obj):
+        return obj.student.first_name if obj.student else obj.professor.first_name if obj.professor else "unknown"    

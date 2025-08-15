@@ -7,6 +7,8 @@ from .views import (
     SpaceManagerProfileUpdateView,
     SpaceUpdateFeatureView,
     SpaceFeatureView,
+    ReservationCreateView,
+    ManagerReservationListView
 )
 
 urlpatterns = [
@@ -16,5 +18,7 @@ urlpatterns = [
     path("events/<int:event_id>/", EventDetailView.as_view(), name="event-details"),
     path("spacemanager/updateProfile/", SpaceManagerProfileUpdateView.as_view(), name="space-manager-profile-update"),
     path("space/<int:space_id>/features", SpaceFeatureView.as_view(), name="space-feature-update"),
-    path("space/<int:space_id>/updateFeatures", SpaceUpdateFeatureView.as_view(), name="space-feature-update")
+    path("space/<int:space_id>/updateFeatures", SpaceUpdateFeatureView.as_view(), name="space-feature-update"),
+    path('api/spaces/<int:space_id>/reserve/', ReservationCreateView.as_view(), name='space_reserve'),
+    path('api/spacemanager/reservations/', ManagerReservationListView.as_view(), name='manager_reservations'),
 ]

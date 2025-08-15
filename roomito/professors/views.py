@@ -17,6 +17,7 @@ from .serializers import (
     ProfessorProfileSerializer
 )
 
+@extend_schema(tags=['auth'])
 class ProfessorRegisterView(APIView):
     @extend_schema(
         request=ProfessorRegisterSerializer,
@@ -110,6 +111,7 @@ class ProfessorRegisterView(APIView):
         return Response({"message": "The temporary password has been sent to the email."}, status=status.HTTP_200_OK)
 
 
+@extend_schema(tags=['professor'])
 class ProfessorProfileUpdateView(APIView):
     permission_classes = [IsAuthenticated]   
     
@@ -180,6 +182,7 @@ class ProfessorProfileUpdateView(APIView):
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
         
 
+@extend_schema(tags=['professor'])
 class ProfessorProfileView(APIView):
     permission_classes = [IsAuthenticated]
 
