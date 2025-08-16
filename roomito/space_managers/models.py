@@ -43,6 +43,21 @@ class Space(models.Model):
     def __str__(self):
         return f"{self.name} (capacity: {self.capacity})"
 
+    @property
+    def first_image(self):
+        return self.images.order_by('id').first()
+
+
+class SpaceImage(models.Model):
+    space = models.ForeignKey(Space, on_delete=models.CASCADE, related_name='images')
+    image = models.ImageField(upload_to='space_photos/')
+
+    class Meta:
+        ordering = ['id'] 
+
+    def __str__(self):
+        return f"{self.space.name} - image #{self.id}"
+
 
 class Schedule(models.Model):
     start_time = models.TimeField()

@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import SpaceManager, Space, Reservation, Schedule, Event, SpaceFeature
+from .models import SpaceManager, Space, Reservation, Schedule, Event, SpaceFeature, SpaceImage
 from django.contrib.auth.models import User
 from django.utils.crypto import get_random_string
 from django.core.mail import send_mail
@@ -13,6 +13,10 @@ admin.site.register(Reservation)
 admin.site.register(Schedule)
 admin.site.register(Event)
 admin.site.register(SpaceFeature)
+
+class SpaceImageInline(admin.TabularInline):
+    model = SpaceImage
+    extra = 1
 
 @admin.register(SpaceManager)
 class SpaceManagerAdmin(admin.ModelAdmin):
@@ -45,5 +49,7 @@ class SpaceManagerAdmin(admin.ModelAdmin):
                 recipient_list=[obj.email],
                 fail_silently=False
             )
-
+            
+        inlines = [SpaceImageInline]
+   
         super().save_model(request, obj, form, change)

@@ -9,6 +9,8 @@ from django.shortcuts import get_object_or_404
 from django.core.mail import send_mail
 from .serializers import (
     ErrorResponseSerializer,
+    ManagerSpaceDetailSerializer,
+    ManagerSpaceListSerializer,
     SpaceSerializer,
     SpaceUpdateFeatureSerializer,
     SuccessResponseSerializer,
@@ -166,10 +168,7 @@ class SpaceListView(APIView):
                                     "email": "string@example.com",
                                     "username": "string",
                                 },
-                                "features": [
-                                    {"id": 1, "name": "feature1"},
-                                    {"id": 2, "name": "feature2"}
-                                ]
+                                "first_image_url": "http://localhost:8000/media/space_photos/1.jpg"
                             }
                         ],
                         response_only=True
@@ -186,15 +185,39 @@ class SpaceListView(APIView):
                         response_only=True
                     )
                 ]
+            ),
+            404: OpenApiResponse(
+                response=ErrorResponseSerializer,
+                description="No spaces found in the database.",
+                examples=[
+                    OpenApiExample(
+                        name="NotFound",
+                        value={"error": "No spaces available."},
+                        response_only=True
+                    )
+                ]
+            ),
+            500: OpenApiResponse(
+                response=ErrorResponseSerializer,
+                description="Unexpected server error.",
+                examples=[OpenApiExample(
+                    name="ServerErrorExample",
+                    value={"error": "An unexpected error occurred."}
+                )]
             )
         },
         description="Retrieves the list of all available spaces for authenticated users."
     )
     
     def get(self, request):
-        spaces = Space.objects.all()
-        serializer = SpaceListSerializer(spaces, many=True)
-        return Response(serializer.data, status=status.HTTP_200_OK)
+        qs = (
+            Space.objects
+            .select_related("space_manager", "space_manager__user")
+            .prefetch_related("images")
+            .order_by("id")
+        )
+        data = SpaceListSerializer(qs, many=True, context={'request': request}).data
+        return Response(data, status=status.HTTP_200_OK)
 
 
 @extend_schema(tags=['event'])      
@@ -728,12 +751,16 @@ class SpaceDetailView(APIView):
                             "features": [
                                 {"id": 1, "name": "string"},
                                 {"id": 2, "name": "string"}
+                            ],
+                            "images": [
+                            {"id": 1, "url": "http://localhost:8000/media/space_photos/1.jpg"}
                             ]
                         }
                     )
                 ]
             ),
             401: OpenApiResponse(
+                response=ErrorResponseSerializer,
                 description="Authentication credentials were not provided or are invalid.",
                 examples=[
                     OpenApiExample(
@@ -743,6 +770,7 @@ class SpaceDetailView(APIView):
                 ]
             ),
             404: OpenApiResponse(
+                response=ErrorResponseSerializer,
                 description="Space not found with the given ID.",
                 examples=[
                     OpenApiExample(
@@ -752,6 +780,7 @@ class SpaceDetailView(APIView):
                 ]
             ),
             400: OpenApiResponse(
+                response=ErrorResponseSerializer,
                 description="Invalid space ID provided (e.g., negative or non-integer value).",
                 examples=[
                     OpenApiExample(
@@ -761,6 +790,7 @@ class SpaceDetailView(APIView):
                 ]
             ),
             500: OpenApiResponse(
+                response=ErrorResponseSerializer,
                 description="An unexpected internal server error occurred.",
                 examples=[
                     OpenApiExample(
@@ -771,32 +801,175 @@ class SpaceDetailView(APIView):
             )
         }
     )
-    def get(self, request, space_id):
+    def get(self, request, space_id: int):
         try:
-            if not isinstance(space_id, int) or space_id <= 0:
+            if space_id <= 0:
                 return Response(
                     {"error": "Invalid space ID. Must be a positive integer."},
                     status=status.HTTP_400_BAD_REQUEST
                 )
 
-            space = get_object_or_404(Space, id=space_id)
+            space = get_object_or_404(
+                Space.objects
+                     .select_related("space_manager", "space_manager__user")
+                     .prefetch_related("features", "images"),
+                id=space_id
+            )
 
-            serializer = SpaceSerializer(space)
+            serializer = SpaceSerializer(space, context={'request': request})
             return Response(serializer.data, status=status.HTTP_200_OK)
 
-        except Http404:
+        except Space.DoesNotExist:
             return Response(
                 {"error": f"Space with ID {space_id} not found."},
                 status=status.HTTP_404_NOT_FOUND
             )
-        except ValueError as ve:
-            return Response(
-                {"error": f"Validation error: {str(ve)}"},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-        except Exception as e:
-            print(f"Unexpected error: {str(e)}")
+        except Exception:
             return Response(
                 {"error": "An unexpected error occurred."},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
+            
+
+@extend_schema(tags=["space_manager"])
+class ManagerSpaceListView(APIView):
+    permission_classes = [IsSpaceManagerUser]
+
+    @extend_schema(
+        description="List spaces managed by the authenticated space manager.",
+        responses={
+            200: OpenApiResponse(
+                response=ManagerSpaceListSerializer(many=True),
+                description="Managed spaces retrieved successfully.",
+                examples=[OpenApiExample(
+                    "Example",
+                    value=[{
+                        "id": 3,
+                        "name": "string",
+                        "address": "string",
+                        "capacity": 50,
+                        "description": "string",
+                        "phone_number": "string",
+                        "first_image_url": "http://localhost:8000/media/space_photos/1.jpg"
+                    }]
+                )]
+            ),
+            401: OpenApiResponse(
+                response=ErrorResponseSerializer,
+                description="Unauthorized – Authentication credentials were not provided.",
+                examples=[OpenApiExample(
+                    name="UnauthorizedExample",
+                    value={"error": "Authentication credentials were not provided."}
+                )
+            ]
+        ),
+        403: OpenApiResponse(
+            response=ErrorResponseSerializer,
+            description="Forbidden – User is not the manager of this space.",
+            examples=[OpenApiExample(
+                name="ForbiddenExample",
+                value={"error": "You are not authorized to view this space."}
+                )
+            ]
+        ),
+        404: OpenApiResponse(
+            response=ErrorResponseSerializer,
+            description="Not Found – The requested space does not exist or is not managed by the user.",
+            examples=[OpenApiExample(
+                name="NotFoundExample",
+                value={"error": "Space not found."}
+            )]
+        ),
+        500: OpenApiResponse(
+            response=ErrorResponseSerializer,
+            description="Unexpected server error.",
+            examples=[OpenApiExample(
+                name="ServerErrorExample",
+                value={"error": "An unexpected error occurred."}
+            )]
+        )
+    }
+)
+    def get(self, request):
+        try:
+            manager = request.user.spacemanager  
+        except Exception:
+            return Response({"error": "You are not a space manager."}, status=status.HTTP_403_FORBIDDEN)
+
+        qs = (
+            Space.objects
+            .filter(space_manager=manager)
+            .prefetch_related("images")
+            .order_by("id")
+        )
+        data = ManagerSpaceListSerializer(qs, many=True).data
+        return Response(data, status=status.HTTP_200_OK)
+
+
+@extend_schema(tags=["space_manager"])
+class ManagerSpaceDetailView(APIView):
+    permission_classes = [IsAuthenticated, IsSpaceManagerUser]
+
+    @extend_schema(
+        description="Retrieve details of a specific managed space by ID.",
+        responses={
+            200: OpenApiResponse(
+                response=ManagerSpaceDetailSerializer,
+                description="Space detail retrieved successfully.",
+                examples=[OpenApiExample(
+                    "Example",
+                    value={
+                        "id": 1,
+                        "name": "string",
+                        "address": "string",
+                        "capacity": 50,
+                        "description": "string",
+                        "features": [{"id":1,"name":"string"}],
+                        "phone_number": "string",
+                        "images": [
+                            {"id": 1, "url": "http://localhost:8000/media/space_photos/1.jpg"}
+                        ]
+                    }
+                )]
+            ),
+            401: OpenApiResponse(
+                response=ErrorResponseSerializer,
+                description="Unauthorized – Authentication credentials were not provided.",
+                examples=[
+                    OpenApiExample(
+                    name="Unauthorized",
+                    value={"error": "Authentication credentials were not provided."}
+                )]
+        ),
+        403: OpenApiResponse(
+            response=ErrorResponseSerializer,
+            description="Forbidden – User is not a space manager.",
+            examples=[OpenApiExample(
+                name="ForbiddenExample",
+                value={"error": "You are not authorized to view this list."}
+            )]
+        ),
+        500: OpenApiResponse(
+            response=ErrorResponseSerializer,
+            description="Unexpected server error.",
+            examples=[OpenApiExample(
+                name="ServerErrorExample",
+                value={"error": "An unexpected error occurred."}
+            )]
+        )
+    }
+)
+    def get(self, request, space_id: int):
+        manager = getattr(request.user, 'spacemanager', None)
+        if not manager:
+            return Response({"error": "You are not a space manager."}, status=status.HTTP_403_FORBIDDEN)
+
+        space = get_object_or_404(
+            Space.objects
+            .prefetch_related("features", "images")
+            .select_related("space_manager", "space_manager__user"),
+            pk=space_id, space_manager=manager
+        )
+        data = ManagerSpaceDetailSerializer(space, context={'request': request}).data
+        return Response(data, status=status.HTTP_200_OK)
+            

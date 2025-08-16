@@ -1,6 +1,6 @@
 from rest_framework import serializers
 from django.contrib.auth.models import User
-from .models import Space, SpaceManager, Event, SpaceFeature, Schedule, Reservation
+from .models import Space, SpaceImage, SpaceManager, Event, SpaceFeature, Schedule, Reservation
 from professors.models import Professor
 from students.models import Student
 from common.validators import validate_password_strength
@@ -34,6 +34,7 @@ class SpaceUpdateFeatureSerializer(serializers.Serializer):
         if not space:
             raise serializers.ValidationError("Space not found.")
         return data        
+    
     
 class SpaceManagerProfileSerializer(serializers.ModelSerializer):
     class Meta:
@@ -92,13 +93,25 @@ class SpaceManagerProfileUpdateSerializer(serializers.Serializer):
         return instance        
 
 
+class SpaceImageSerializer(serializers.ModelSerializer):
+    url = serializers.SerializerMethodField()
+
+    class Meta:
+        model = SpaceImage
+        fields = ["id", "url"]
+
+    def get_url(self, obj):
+        request = self.context.get('request')
+        return request.build_absolute_uri(obj.image.url) if request else obj.image.url
+    
+    
 class SpaceListSerializer(serializers.ModelSerializer):
     space_manager = SpaceManagerProfileSerializer(read_only=True)
-    features = SpaceFeatureSerializer(many=True, read_only=True) 
+    first_image_url = serializers.SerializerMethodField()
     
     class Meta:
         model = Space
-        fields = ['id', 'name', 'address', 'capacity', 'description', 'space_manager','phone_number', 'features']
+        fields = ['id', 'name', 'address', 'capacity', 'description', 'space_manager','phone_number', 'first_image_url']
         read_only_fields = ['id'] 
 
     def validate_capacity(self, value):
@@ -106,14 +119,22 @@ class SpaceListSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("Capacity must be greater than zero.")
         return value
     
+    def get_first_image_url(self, obj):
+        img = obj.first_image
+        if not img:
+            return None
+        request = self.context.get('request')
+        return request.build_absolute_uri(img.image.url) if request else img.image.url
+    
 
 class SpaceSerializer(serializers.ModelSerializer):
     space_manager = SpaceManagerProfileSerializer()
     features = SpaceFeatureSerializer(many=True)
+    images = SpaceImageSerializer(many=True, read_only=True)   
 
     class Meta:
         model = Space
-        fields = ['id', 'name', 'address', 'capacity', 'description', 'space_manager', 'phone_number', 'features']
+        fields = ['id', 'name', 'address', 'capacity', 'description', 'space_manager', 'phone_number', 'features', 'images']
 
 
 class StudentSerializer(serializers.ModelSerializer):
@@ -276,8 +297,8 @@ class ReservationListSerializer(serializers.ModelSerializer):
         fields = ['id', 'space_name', 'date', 'start_time', 'end_time', 'status_display', 'reservation_type', 'description', 'reservee_name', 'reservee_type', 'phone_number']
 
     def get_reservee_name(self, obj):
-        if obj.student:
-            return f"{obj.student.first_name} {obj.student.last_name}"
+        if obj.student and obj.student.user:
+            return f"{obj.student.user.first_name} {obj.student.user.last_name}"
         elif obj.professor:
             return f"{obj.professor.first_name} {obj.professor.last_name}"
         return "unknown"   
@@ -288,3 +309,32 @@ class ReservationListSerializer(serializers.ModelSerializer):
         elif obj.professor:
             return "professor"
         return "unknown" 
+    
+    
+class ManagerSpaceListSerializer(serializers.ModelSerializer):
+    first_image_url = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Space
+        fields = [
+            "id", "name", "address", "capacity", "phone_number",
+            "description", "first_image_url"
+        ]
+
+    def get_first_image_url(self, obj):
+        img = obj.first_image
+        if not img:
+            return None
+        request = self.context.get('request')
+        return request.build_absolute_uri(img.image.url) if request else img.image.url
+    
+    
+class ManagerSpaceDetailSerializer(serializers.ModelSerializer):
+    features = SpaceFeatureSerializer(many=True, read_only=True)
+    images = SpaceImageSerializer(many=True, read_only=True)
+
+    class Meta:
+        model = Space
+        fields = [
+            "id", "name", "address", "capacity", "phone_number","description", "features", "images"
+        ]
