@@ -98,7 +98,7 @@ class SpaceListSerializer(serializers.ModelSerializer):
     
     class Meta:
         model = Space
-        fields = ['id', 'name', 'address', 'capacity', 'description', 'space_manager', 'features']
+        fields = ['id', 'name', 'address', 'capacity', 'description', 'space_manager','phone_number', 'features']
         read_only_fields = ['id'] 
 
     def validate_capacity(self, value):
@@ -113,7 +113,7 @@ class SpaceSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Space
-        fields = ['id', 'name', 'address', 'capacity', 'description', 'space_manager', 'features']
+        fields = ['id', 'name', 'address', 'capacity', 'description', 'space_manager', 'phone_number', 'features']
 
 
 class StudentSerializer(serializers.ModelSerializer):

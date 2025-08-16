@@ -1,3 +1,4 @@
+from django.http import Http404
 from rest_framework.views import APIView
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -8,6 +9,7 @@ from django.shortcuts import get_object_or_404
 from django.core.mail import send_mail
 from .serializers import (
     ErrorResponseSerializer,
+    SpaceSerializer,
     SpaceUpdateFeatureSerializer,
     SuccessResponseSerializer,
     SpaceManagerProfileSerializer,
@@ -695,3 +697,106 @@ class ManagerReservationListView(APIView):
         reservations = Reservation.objects.filter(space__in=managed_spaces).select_related('schedule', 'space', 'student', 'professor')
         serializer = ReservationListSerializer(reservations, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
+    
+
+@extend_schema(tags=['space'])
+class SpaceDetailView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(
+        description="Retrieve the details of a specific space for the authenticated users",
+        responses={
+            200: OpenApiResponse(
+                response=SpaceSerializer(),
+                description="Space details retrieved successfully",
+                examples=[
+                    OpenApiExample(
+                        name="success",
+                        value={
+                            "id": 1,
+                            "name": "string",
+                            "address": "string",
+                            "capacity": 50,
+                            "description": "string",
+                            "space_manager": {
+                                "id": 1,
+                                "first_name": "string",
+                                "last_name": "string",
+                                "username": "string",
+                                "email": "string@example.com"
+                            },
+                            "features": [
+                                {"id": 1, "name": "string"},
+                                {"id": 2, "name": "string"}
+                            ]
+                        }
+                    )
+                ]
+            ),
+            401: OpenApiResponse(
+                description="Authentication credentials were not provided or are invalid.",
+                examples=[
+                    OpenApiExample(
+                        name="unauthorized",
+                        value={"detail": "Authentication credentials were not provided."}
+                    )
+                ]
+            ),
+            404: OpenApiResponse(
+                description="Space not found with the given ID.",
+                examples=[
+                    OpenApiExample(
+                        name="not_found",
+                        value={"error": "Space with ID 10 not found."}
+                    )
+                ]
+            ),
+            400: OpenApiResponse(
+                description="Invalid space ID provided (e.g., negative or non-integer value).",
+                examples=[
+                    OpenApiExample(
+                        name="bad_request",
+                        value={"error": "Invalid space ID. Must be a positive integer."}
+                    )
+                ]
+            ),
+            500: OpenApiResponse(
+                description="An unexpected internal server error occurred.",
+                examples=[
+                    OpenApiExample(
+                        name="internal_error",
+                        value={"error": "An unexpected error occurred. Please try again later."}
+                    )
+                ]
+            )
+        }
+    )
+    def get(self, request, space_id):
+        try:
+            if not isinstance(space_id, int) or space_id <= 0:
+                return Response(
+                    {"error": "Invalid space ID. Must be a positive integer."},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            space = get_object_or_404(Space, id=space_id)
+
+            serializer = SpaceSerializer(space)
+            return Response(serializer.data, status=status.HTTP_200_OK)
+
+        except Http404:
+            return Response(
+                {"error": f"Space with ID {space_id} not found."},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        except ValueError as ve:
+            return Response(
+                {"error": f"Validation error: {str(ve)}"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        except Exception as e:
+            print(f"Unexpected error: {str(e)}")
+            return Response(
+                {"error": "An unexpected error occurred."},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
