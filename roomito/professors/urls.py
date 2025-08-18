@@ -1,8 +1,8 @@
 from django.urls import path
-from .views import ProfessorRegisterView, ProfessorProfileUpdateView, ProfessorProfileView
+from .views import StaffRegisterView, StaffProfileUpdateView, StaffProfileView
 
 urlpatterns = [
-    path('professor/register/', ProfessorRegisterView.as_view(), name='professor-register'),
-    path('professor/updateProfile/', ProfessorProfileUpdateView.as_view(), name='professor-profile-update'),
-    path('professor/profile/', ProfessorProfileView.as_view(), name='professor-profile')
+    path('staff/register/', StaffRegisterView.as_view(), name='staff-register'),
+    path('staff/updateProfile/', StaffProfileUpdateView.as_view(), name='staff-profile-update'),
+    path('staff/profile/', StaffProfileView.as_view(), name='staff-profile')
 ]

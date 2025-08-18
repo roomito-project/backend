@@ -15,7 +15,7 @@ class TokenResponseSerializer(serializers.Serializer):
     
 
 class UnifiedLoginSerializer(serializers.Serializer):
-    role = serializers.ChoiceField(choices=['professor', 'student', 'space_manager'])
+    role = serializers.ChoiceField(choices=['staff', 'student', 'space_manager'])
     username = serializers.CharField()
     password = serializers.CharField(write_only=True)
 

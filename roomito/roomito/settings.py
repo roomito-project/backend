@@ -138,7 +138,7 @@ SPECTACULAR_SETTINGS = {
         {'name': 'auth', 'description': 'Authentication and registration endpoints'},
         {'name': 'space_manager', 'description': 'Endpoints for space managers'},
         {'name': 'space', 'description': 'Endpoints for spaces'},
-        {'name': 'professor', 'description': 'Endpoints for professors'},
+        {'name': 'staff', 'description': 'Endpoints for staffs'},
         {'name': 'student', 'description': 'Endpoints for students'},
         {'name': 'reservation', 'description': 'Endpoints for reservations'},
         {'name': 'event', 'description': 'Endpoints for events'},

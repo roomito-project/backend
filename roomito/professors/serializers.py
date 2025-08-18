@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Professor
+from .models import Staff
 from common.validators import validate_password_strength
 import re
 
@@ -17,7 +17,7 @@ class TokenResponseSerializer(serializers.Serializer):
     refresh = serializers.CharField()
 
 
-class ProfessorRegisterSerializer(serializers.Serializer):
+class StaffRegisterSerializer(serializers.Serializer):
     first_name = serializers.CharField(max_length=100)
     last_name = serializers.CharField(max_length=100)
     email = serializers.EmailField()
@@ -47,7 +47,7 @@ class ProfessorRegisterSerializer(serializers.Serializer):
         return data
 
 
-class ProfessorProfileUpdateSerializer(serializers.Serializer):
+class StaffProfileUpdateSerializer(serializers.Serializer):
     first_name = serializers.CharField(max_length=100)
     last_name = serializers.CharField(max_length=100)
     personnel_code = serializers.CharField(max_length=20)
@@ -70,20 +70,20 @@ class ProfessorProfileUpdateSerializer(serializers.Serializer):
         return attrs
     
     def validate_personnel_code(self, value):
-        professor = self.context['request'].user.professor
-        if Professor.objects.exclude(pk=professor.pk).filter(personnel_code=value).exists():
+        Staff = self.context['request'].user.Staff
+        if Staff.objects.exclude(pk=Staff.pk).filter(personnel_code=value).exists():
             raise serializers.ValidationError("This personnel code is already in use.")
         return value
 
     def validate_national_id(self, value):
-        professor = self.context['request'].user.professor
-        if Professor.objects.exclude(pk=professor.pk).filter(national_id=value).exists():
+        Staff = self.context['request'].user.Staff
+        if Staff.objects.exclude(pk=Staff.pk).filter(national_id=value).exists():
             raise serializers.ValidationError("This national ID is already in use.")
         return value
     
     # def validate_email(self, value):
-    #     user = self.context['request'].user.professor
-    #     if Professor.objects.exclude(pk=Professor.pk).filter(email=value).exists():
+    #     user = self.context['request'].user.Staff
+    #     if Staff.objects.exclude(pk=Staff.pk).filter(email=value).exists():
     #         raise serializers.ValidationError("This email is already in use.")
     #     return value
     
@@ -105,7 +105,7 @@ class ProfessorProfileUpdateSerializer(serializers.Serializer):
         return instance
     
 
-class ProfessorProfileSerializer(serializers.ModelSerializer):
+class StaffProfileSerializer(serializers.ModelSerializer):
     class Meta:
-        model = Professor
+        model = Staff
         fields = ["first_name", "last_name", "email", "personnel_code", "national_id"]    

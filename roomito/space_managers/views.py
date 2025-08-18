@@ -246,9 +246,9 @@ class EventListView(APIView):
                                 "end_time": "02:48:04.892Z",
                                 "space": {"id": 1, "name": "string", "address": "string", "capacity": 50},
                                 "poster": "string.jpg",
-                                "organizer": "professor",
+                                "organizer": "staff",
                                 "student": None,
-                                "professor": {"first_name": "string", "last_name": "string", "email": "string@example.com"},
+                                "staff": {"first_name": "string", "last_name": "string", "email": "string@example.com"},
                                 "description": "string"
                             }
                         ],
@@ -517,7 +517,7 @@ class ReservationCreateView(APIView):
     permission_classes = [IsAuthenticated]
 
     @extend_schema(
-        description="Create a reservation request for a specific space by authenticated user (student or professor).",
+        description="Create a reservation request for a specific space by authenticated user (student or staff).",
         request=ReservationCreateSerializer,
         responses={
             201: OpenApiResponse(
@@ -716,7 +716,7 @@ class ManagerReservationListView(APIView):
         if not managed_spaces.exists():
             return Response({"message": "No spaces managed by you."}, status=status.HTTP_200_OK)
 
-        reservations = Reservation.objects.filter(space__in=managed_spaces).select_related('schedule', 'space', 'student', 'professor')
+        reservations = Reservation.objects.filter(space__in=managed_spaces).select_related('schedule', 'space', 'student', 'staff')
         serializer = ReservationListSerializer(reservations, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
     

@@ -1,7 +1,7 @@
 from rest_framework import serializers
 from django.contrib.auth.models import User
 from .models import Space, SpaceImage, SpaceManager, Event, SpaceFeature, Schedule, Reservation
-from professors.models import Professor
+from professors.models import Staff
 from students.models import Student
 from common.validators import validate_password_strength
 
@@ -159,16 +159,16 @@ class StudentSerializer(serializers.ModelSerializer):
         fields = ['first_name', 'last_name', 'email', 'student_id']
 
 
-class ProfessorSerializer(serializers.ModelSerializer):
+class StaffSerializer(serializers.ModelSerializer):
     class Meta:
-        model = Professor
+        model = Staff
         fields = ['first_name', 'last_name', 'personnel_code', 'email']
 
 
 class EventSerializer(serializers.ModelSerializer):
     space = SpaceSerializer(read_only=True)
     student_organizer = StudentSerializer(read_only=True)
-    professor_organizer = ProfessorSerializer(read_only=True)
+    staff_organizer = StaffSerializer(read_only=True)
     poster = serializers.ImageField(read_only=True, allow_null=True)
     date = serializers.DateField(source='schedule.date', read_only=True)
     start_time = serializers.TimeField(source='schedule.start_time', read_only=True)
@@ -179,21 +179,21 @@ class EventSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'title', 'event_type', 'date', 'start_time', 'end_time',
             'space', 'poster', 'organizer',
-            'student_organizer', 'professor_organizer', 'description'
+            'student_organizer', 'staff_organizer', 'description'
         ]
         read_only_fields = fields
 
     def validate(self, data):
         organizer = data.get('organizer')
         student = data.get('student_organizer')
-        professor = data.get('professor_organizer')
+        staff = data.get('staff_organizer')
 
         if organizer == 'student' and not student:
             raise serializers.ValidationError({"student_organizer": "A student must be selected when organizer is 'student'."})
-        if organizer == 'professor' and not professor:
-            raise serializers.ValidationError({"professor_organizer": "A professor must be selected when organizer is 'professor'."})
-        if student and professor:
-            raise serializers.ValidationError({"error": "Only one organizer (student or professor) can be selected."})
+        if organizer == 'staff' and not staff:
+            raise serializers.ValidationError({"staff_organizer": "A staff must be selected when organizer is 'staff'."})
+        if student and staff:
+            raise serializers.ValidationError({"error": "Only one organizer (student or staff) can be selected."})
 
         return data
 
@@ -216,8 +216,8 @@ class EventDetailSerializer(serializers.ModelSerializer):
     def get_organizer_name(self, obj):
         if obj.organizer == 'student' and obj.student_organizer:
             return f"{obj.student_organizer.first_name} {obj.student_organizer.last_name}"
-        elif obj.organizer == 'professor' and obj.professor_organizer:
-            return f"{obj.professor_organizer.first_name} {obj.professor_organizer.last_name}"
+        elif obj.organizer == 'staff' and obj.staff_organizer:
+            return f"{obj.staff_organizer.first_name} {obj.staff_organizer.last_name}"
         return "unknown"
 
     def get_poster_url(self, obj):
@@ -253,9 +253,9 @@ class ReservationCreateSerializer(serializers.ModelSerializer):
         model = Reservation
         fields = [
             'id', 'space', 'reservation_type', 'reservee_type',
-            'student', 'professor', 'phone_number', 'description', 'status', 'schedule'
+            'student', 'staff', 'phone_number', 'description', 'status', 'schedule'
         ]
-        read_only_fields = ['id', 'status', 'space', 'reservee_type', 'student', 'professor']
+        read_only_fields = ['id', 'status', 'space', 'reservee_type', 'student', 'staff']
 
     def validate(self, data):
         user = self.context['request'].user
@@ -263,13 +263,13 @@ class ReservationCreateSerializer(serializers.ModelSerializer):
         if hasattr(user, 'student_profile'):
             data['reservee_type'] = 'student'
             data['student'] = user.student_profile
-            data['professor'] = None
-        elif hasattr(user, 'professor'):
-            data['reservee_type'] = 'professor'
-            data['professor'] = user.professor
+            data['staff'] = None
+        elif hasattr(user, 'staff'):
+            data['reservee_type'] = 'staff'
+            data['staff'] = user.staff
             data['student'] = None
         else:
-            raise serializers.ValidationError("You must be a student or professor to create a reservation.")
+            raise serializers.ValidationError("You must be a student or staff to create a reservation.")
 
         if data.get('phone_number'):
             if not data['phone_number'].isdigit() or len(data['phone_number']) != 11:
@@ -311,15 +311,15 @@ class ReservationListSerializer(serializers.ModelSerializer):
     def get_reservee_name(self, obj):
         if obj.student and obj.student.user:
             return f"{obj.student.user.first_name} {obj.student.user.last_name}"
-        elif obj.professor:
-            return f"{obj.professor.first_name} {obj.professor.last_name}"
+        elif obj.staff:
+            return f"{obj.staff.first_name} {obj.staff.last_name}"
         return "unknown"   
     
     def get_reservee_type(self, obj):
         if obj.student:
             return "student"
-        elif obj.professor:
-            return "professor"
+        elif obj.staff:
+            return "staff"
         return "unknown" 
     
     
@@ -403,22 +403,11 @@ class SpaceUpdateSerializer(serializers.ModelSerializer):
     address = serializers.CharField(required=False, allow_blank=True)
     description = serializers.CharField(required=False, allow_blank=True)
     phone_number = serializers.CharField(required=False, allow_blank=True, allow_null=True)
-
-    features = serializers.ListField(
-        child=serializers.IntegerField(),
-        required=False,
-        allow_empty=True
-    )
-    images = serializers.ListField(
-        child=serializers.ImageField(),
-        required=False,
-        allow_empty=True,
-        write_only=True
-    )
+    capacity = serializers.IntegerField(required=False)
 
     class Meta:
         model = Space
-        fields = ["name", "address", "capacity", "phone_number", "description", "features", "images"]
+        fields = ["name", "address", "capacity", "phone_number", "description"]
 
     def validate(self, attrs):
         for field in ["name", "address", "description"]:
@@ -431,25 +420,8 @@ class SpaceUpdateSerializer(serializers.ModelSerializer):
         return attrs
 
     def update(self, instance, validated_data):
-        features = validated_data.pop("features", None)
-        new_images = validated_data.pop("images", None)
-
-        for field in ["name", "address", "description", "phone_number"]:
+        for field in ["name", "address", "description", "phone_number", "capacity"]:
             if field in validated_data:
                 setattr(instance, field, validated_data[field])
-
-        if "capacity" in validated_data:
-            instance.capacity = validated_data["capacity"]
-
         instance.save()
-
-        if features is not None:
-            qs = SpaceFeature.objects.filter(id__in=features)
-            instance.features.set(qs)
-
-        if new_images:
-            for img in new_images:
-                if img:
-                    SpaceImage.objects.create(space=instance, image=img)
-
         return instance
