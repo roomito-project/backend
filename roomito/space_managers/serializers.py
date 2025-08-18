@@ -34,6 +34,14 @@ class SpaceUpdateFeatureSerializer(serializers.Serializer):
         if not space:
             raise serializers.ValidationError("Space not found.")
         return data        
+
+
+class FeatureIdsSerializer(serializers.Serializer):
+    feature_ids = serializers.ListField(
+        child=serializers.IntegerField(min_value=1),
+        required=True,
+        help_text="List of existing feature IDs to add to the space."
+    )
     
     
 class SpaceManagerProfileSerializer(serializers.ModelSerializer):
@@ -130,11 +138,15 @@ class SpaceListSerializer(serializers.ModelSerializer):
 class SpaceSerializer(serializers.ModelSerializer):
     space_manager = SpaceManagerProfileSerializer()
     features = SpaceFeatureSerializer(many=True)
-    images = SpaceImageSerializer(many=True, read_only=True)   
+    images = SpaceImageSerializer(many=True, read_only=True)
+    phone_number = serializers.SerializerMethodField()   
 
     class Meta:
         model = Space
         fields = ['id', 'name', 'address', 'capacity', 'description', 'space_manager', 'phone_number', 'features', 'images']
+        
+    def get_phone_number(self, obj):
+        return obj.phone_number if obj.phone_number not in ("", None) else None    
 
 
 class StudentSerializer(serializers.ModelSerializer):
@@ -338,3 +350,106 @@ class ManagerSpaceDetailSerializer(serializers.ModelSerializer):
         fields = [
             "id", "name", "address", "capacity", "phone_number","description", "features", "images"
         ]
+
+
+class SpaceCreateSerializer(serializers.ModelSerializer):
+    features = serializers.PrimaryKeyRelatedField(
+        queryset=SpaceFeature.objects.all(),
+        many=True,
+        required=False,
+        allow_empty=True
+    )
+    images = serializers.ListField(
+        child=serializers.ImageField(),
+        required=False,
+        allow_empty=True
+    )
+
+    class Meta:
+        model = Space
+        fields = [
+            "id", "name", "address", "capacity", "phone_number",
+            "description", "features", "images"
+        ]
+
+    def to_internal_value(self, data):
+        mutable = data.copy()
+        if mutable.get('features') == "":
+            mutable.pop('features') 
+        if mutable.get('images') == "":
+            mutable.pop('images')  
+        return super().to_internal_value(mutable)
+
+    def create(self, validated_data):
+        features = validated_data.pop("features", [])
+        images = validated_data.pop("images", [])
+        request = self.context["request"]
+
+        space = Space.objects.create(
+            space_manager=request.user.spacemanager,
+            **validated_data
+        )
+        if features:
+            space.features.set(features)
+
+        for img in images:
+            SpaceImage.objects.create(space=space, image=img)
+
+        return space
+
+
+class SpaceUpdateSerializer(serializers.ModelSerializer):
+    name = serializers.CharField(required=False, allow_blank=True)
+    address = serializers.CharField(required=False, allow_blank=True)
+    description = serializers.CharField(required=False, allow_blank=True)
+    phone_number = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+
+    features = serializers.ListField(
+        child=serializers.IntegerField(),
+        required=False,
+        allow_empty=True
+    )
+    images = serializers.ListField(
+        child=serializers.ImageField(),
+        required=False,
+        allow_empty=True,
+        write_only=True
+    )
+
+    class Meta:
+        model = Space
+        fields = ["name", "address", "capacity", "phone_number", "description", "features", "images"]
+
+    def validate(self, attrs):
+        for field in ["name", "address", "description"]:
+            if field in attrs and (attrs[field] is None or attrs[field] == ""):
+                attrs.pop(field)
+
+        if "phone_number" in attrs and attrs["phone_number"] in ["", None]:
+            attrs["phone_number"] = None
+
+        return attrs
+
+    def update(self, instance, validated_data):
+        features = validated_data.pop("features", None)
+        new_images = validated_data.pop("images", None)
+
+        for field in ["name", "address", "description", "phone_number"]:
+            if field in validated_data:
+                setattr(instance, field, validated_data[field])
+
+        if "capacity" in validated_data:
+            instance.capacity = validated_data["capacity"]
+
+        instance.save()
+
+        if features is not None:
+            qs = SpaceFeature.objects.filter(id__in=features)
+            instance.features.set(qs)
+
+        if new_images:
+            for img in new_images:
+                if img:
+                    SpaceImage.objects.create(space=instance, image=img)
+
+        return instance

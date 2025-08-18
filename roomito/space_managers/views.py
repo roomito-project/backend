@@ -4,15 +4,17 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework import status
 from drf_spectacular.utils import extend_schema, OpenApiResponse, OpenApiExample, OpenApiParameter
-from .models import Reservation, Space, Event, SpaceFeature, ReservationNotification, SpaceManager
+from .models import Reservation, Space, Event, SpaceFeature, ReservationNotification, SpaceImage, SpaceManager
 from django.shortcuts import get_object_or_404
 from django.core.mail import send_mail
+from rest_framework.parsers import MultiPartParser, FormParser
 from .serializers import (
     ErrorResponseSerializer,
     ManagerSpaceDetailSerializer,
     ManagerSpaceListSerializer,
     SpaceSerializer,
     SpaceUpdateFeatureSerializer,
+    SpaceUpdateSerializer,
     SuccessResponseSerializer,
     SpaceManagerProfileSerializer,
     SpaceListSerializer,
@@ -22,7 +24,9 @@ from .serializers import (
     SpaceFeatureSerializer,
     SpaceUpdateFeatureSerializer,
     ReservationCreateSerializer,
-    ReservationListSerializer
+    ReservationListSerializer,
+    SpaceCreateSerializer,
+    FeatureIdsSerializer
 )
 
 class IsSpaceManagerUser(IsAuthenticated):
@@ -367,26 +371,27 @@ class EventDetailView(APIView):
         serializer = EventDetailSerializer(event)
         return Response(serializer.data, status=200)
 
-  
-@extend_schema(tags=['space'])        
+
+@extend_schema(tags=['space_manager'])
 class SpaceFeatureView(APIView):
     permission_classes = [IsSpaceManagerUser]
 
     @extend_schema(
-        description="Retrieves the current and available features for a specific space by authenticated space manager.",
-        request=None,  
+        description="Retrieves the current and available features for a space managed by the authenticated space manager.",
+        request=None,
         responses={
             200: OpenApiResponse(
-                response=SuccessResponseSerializer,
-                description="Successfully retrieved space features",
+                response=SpaceFeatureSerializer,
+                description="space features retrieved Successfully",
                 examples=[
                     OpenApiExample(
                         "Success",
                         value={
                             "space_name": "string",
-                            "current_features": ["feature1"],
+                            "current_features": [""],
                             "available_features": [
-                                {"id": 1, "name": "feature1"}
+                                {"id": 1, "name": "string1"},
+                                {"id": 2, "name": "string2"}
                             ]
                         }
                     )
@@ -416,31 +421,31 @@ class SpaceFeatureView(APIView):
     )
     def get(self, request, space_id):
         space = get_object_or_404(Space, id=space_id, space_manager__user=request.user)
-        features = SpaceFeature.objects.all()  
-        space_features = space.features.all() 
+        features = SpaceFeature.objects.all()
+        space_features = space.features.all()
 
         return Response({
             "space_name": space.name,
             "current_features": [feature.name for feature in space_features],
             "available_features": SpaceFeatureSerializer(features, many=True).data
-        }, status=status.HTTP_200_OK)
-    
-    
-@extend_schema(tags=['space'])    
+        }, status=status.HTTP_200_OK) 
+   
+   
+@extend_schema(tags=['space_manager'])
 class SpaceUpdateFeatureView(APIView):
     permission_classes = [IsSpaceManagerUser]
 
     @extend_schema(
-        description="Add an existing or new feature to a specific space by authenticated space manager.",
-        request=SpaceUpdateFeatureSerializer,
+        description="Allows a space manager to add existing features to a space using their IDs.",
+        request=FeatureIdsSerializer, 
         responses={
             200: OpenApiResponse(
-                response=SuccessResponseSerializer,
-                description="Feature updated successfully",
+                description="Features updated successfully",
                 examples=[
                     OpenApiExample(
                         "Success",
                         value={
+                            "message": "Features updated successfully.",
                             "updated_features": ["string1", "string2"]
                         }
                     )
@@ -448,34 +453,25 @@ class SpaceUpdateFeatureView(APIView):
             ),
             400: OpenApiResponse(
                 response=ErrorResponseSerializer,
-                description="invalid data or validation error..",
+                description="Invalid data or no feature IDs provided",
                 examples=[
                     OpenApiExample(
-                        "invalidError",
-                        value={
-                            "action": ["Please specify the action (add_existing or add_new)."],
-                            "feature_name": ["Please provide the feature name."]
-                        }
+                        "invalid_error",
+                        value={"error": "No feature IDs provided."}
                     )
                 ]
             ),
             404: OpenApiResponse(
                 response=ErrorResponseSerializer,
-                description="Space not found or user is not the manager",
+                description="Space not found, user is not the manager, or feature ID is invalid",
                 examples=[
                     OpenApiExample(
                         "NotFound",
                         value={"error": "Space not found or you are not authorized to manage it."}
-                    )
-                ]
-            ),
-            409: OpenApiResponse(
-                response=ErrorResponseSerializer,
-                description="Feature already exists when trying to add a new one",
-                examples=[
+                    ),
                     OpenApiExample(
-                        "Conflict",
-                        value={"error": "Feature already exists."}
+                        "InvalidFeature",
+                        value={"error": "One or more feature IDs are invalid: [999]"}
                     )
                 ]
             ),
@@ -489,29 +485,32 @@ class SpaceUpdateFeatureView(APIView):
                     )
                 ]
             )
-        },
+        }
     )
     def post(self, request, space_id):
         space = get_object_or_404(Space, id=space_id, space_manager__user=request.user)
-        serializer = SpaceUpdateFeatureSerializer(data=request.data, context={'space': space})
+        
+        serializer = FeatureIdsSerializer(data=request.data)
         if not serializer.is_valid():
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-        feature_action = request.data.get('action')
-        feature_name = request.data.get('feature_name')
+        feature_ids = serializer.validated_data['feature_ids']
 
-        if feature_action == "add_existing":
-            feature = get_object_or_404(SpaceFeature, name=feature_name)
-            space.features.add(feature)
-        elif feature_action == "add_new":
-            if SpaceFeature.objects.filter(name=feature_name).exists():
-                return Response({"error": "Feature already exists."}, status=status.HTTP_400_BAD_REQUEST)
-            new_feature = SpaceFeature.objects.create(name=feature_name)
-            space.features.add(new_feature)
+        invalid_features = [fid for fid in feature_ids if not SpaceFeature.objects.filter(id=fid).exists()]
+        if invalid_features:
+            return Response(
+                {"error": f"One or more feature IDs are invalid: {invalid_features}"},
+                status=status.HTTP_404_NOT_FOUND
+            )
 
-        space.save()
-        return Response({"message": "Feature updated successfully.", "updated_features": [f.name for f in space.features.all()]}, status=status.HTTP_200_OK)   
+        features_to_add = SpaceFeature.objects.filter(id__in=feature_ids)
+        space.features.add(*features_to_add)
 
+        return Response({
+            "message": "Features updated successfully.",
+            "updated_features": [f.name for f in space.features.all()]
+        }, status=status.HTTP_200_OK)
+        
 
 @extend_schema(tags=['reservation'])
 class ReservationCreateView(APIView):
@@ -972,4 +971,221 @@ class ManagerSpaceDetailView(APIView):
         )
         data = ManagerSpaceDetailSerializer(space, context={'request': request}).data
         return Response(data, status=status.HTTP_200_OK)
-            
+        
+
+@extend_schema(tags=['space_manager'])
+class ManagerSpaceCreateView(APIView):
+    permission_classes = [IsSpaceManagerUser]
+    parser_classes = [MultiPartParser, FormParser]  
+
+    @extend_schema(
+        description="Create a new space by authenticated space manager.",
+        request=SpaceCreateSerializer,
+        responses={
+            201: OpenApiResponse(
+                response=SpaceSerializer,
+                description="Space created successfully.",
+                examples=[OpenApiExample(
+                    "Success",
+                    value={
+                        "id": 1,
+                        "name": "string",
+                        "address": "string",
+                        "capacity": 50,
+                        "phone_number": "string",
+                        "description": "string",
+                        "features": [
+                            {"id": 1, "name": "string1"},
+                            {"id": 2, "name": "string2"}
+                        ]
+                    }
+                )]
+            ),
+            400: OpenApiResponse(
+                response=ErrorResponseSerializer,
+                description="Validation error",
+                examples=[OpenApiExample(
+                    "BadRequest",
+                    value={"capacity": ["Capacity must be greater than zero."]}
+                )]
+            ),
+            401: OpenApiResponse(
+                response=ErrorResponseSerializer,
+                description="Unauthorized",
+                examples=[OpenApiExample(
+                    "Unauthorized",
+                    value={"error": "Authentication credentials were not provided."}
+                )]
+            ),
+            403: OpenApiResponse(
+                response=ErrorResponseSerializer,
+                description="Forbidden – User is not a space manager.",
+                examples=[OpenApiExample(
+                    "Forbidden",
+                    value={"error": "You are not authorized to create spaces."}
+                )]
+            ),
+            500: OpenApiResponse(
+                response=ErrorResponseSerializer,
+                description="Server error",
+                examples=[OpenApiExample(
+                    "ServerError",
+                    value={"error": "An unexpected error occurred."}
+                )]
+            )
+        }
+    )
+    def post(self, request):
+        serializer = SpaceCreateSerializer(data=request.data, context={"request": request})
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            space = serializer.save()
+            return Response(SpaceSerializer(space, context={"request": request}).data, status=status.HTTP_201_CREATED)
+        except Exception as e:
+            print("Unexpected error:", str(e))
+            return Response({"error": "An unexpected error occurred."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@extend_schema(tags=["space_manager"])
+class ManagerSpaceUpdateView(APIView):
+    permission_classes = [IsSpaceManagerUser]
+    parser_classes = [MultiPartParser, FormParser]
+
+    @extend_schema(
+        description="Partially update a space managed by the authenticated manager.",
+        request=SpaceUpdateSerializer,
+        responses={
+            200: OpenApiResponse(
+                response=SpaceSerializer,
+                description="Space updated successfully.",
+                examples=[OpenApiExample(
+                    "Success",
+                    value={
+                        "id": 1,
+                        "name": "string",
+                        "address": "string",
+                        "capacity": 50,
+                        "phone_number": "09123456789",
+                        "description": "string",
+                        "features": [
+                            {"id": 1, "name": "string1"},
+                            {"id": 2, "name": "string2"}
+                        ],
+                        "images": [
+                            {"id": 1, "url": "/media/space_photos/1.jpg"},
+                            {"id": 2, "url": "/media/space_photos/2.jpg"}
+                        ]
+                    }
+                )]
+            ),
+            400: OpenApiResponse(
+                response=ErrorResponseSerializer,
+                description="Validation error",
+                examples=[
+                    OpenApiExample(
+                        "CapacityError",
+                        value={"capacity": ["Capacity must be greater than zero."]}
+                    ),
+                    OpenApiExample(
+                        "InvalidFeatureError",
+                        value={"features": ["Invalid pk '999' - object does not exist."]}
+                    )
+                ]
+            ),
+            403: OpenApiResponse(
+                response=ErrorResponseSerializer,
+                description="Forbidden – Not space manager of this space",
+                examples=[
+                    OpenApiExample(
+                        "ForbiddenExample",
+                        value={"error": "You are not authorized to update this space."}
+                    )
+                ]
+            ),
+            404: OpenApiResponse(
+                response=ErrorResponseSerializer,
+                description="Space not found",
+                examples=[
+                    OpenApiExample(
+                        "NotFoundExample",
+                        value={"error": "Space with ID 77 not found."}
+                    )
+                ]
+            ),
+            500: OpenApiResponse(
+                response=ErrorResponseSerializer,
+                description="Unexpected server error",
+                examples=[
+                    OpenApiExample(
+                        "ServerErrorExample",
+                        value={"error": "An unexpected error occurred."}
+                    )
+                ]
+            ),
+        }
+    )
+    def patch(self, request, space_id: int):
+        space = get_object_or_404(Space, id=space_id, space_manager__user=request.user)
+
+        data = request.data.copy()
+
+        for key in ["name", "address", "description"]:
+            if key in data and data.get(key) == "":
+                data.pop(key)
+
+        if "phone_number" in data and data.get("phone_number") == "":
+            data["phone_number"] = None
+
+        if "capacity" in data and data.get("capacity") in ("", None):
+            data.pop("capacity")
+
+        if hasattr(request.data, "getlist"):
+            raw_features = request.data.getlist("features")
+        else:
+            raw_features = data.get("features", [])
+
+        if isinstance(raw_features, str):
+            raw_features = [x.strip() for x in raw_features.split(",") if x.strip()]
+
+        cleaned_feature_ids = []
+        for f in raw_features or []:
+            if f not in ("", None):
+                try:
+                    cleaned_feature_ids.append(int(f))
+                except (TypeError, ValueError):
+                    pass
+
+        data.pop("features", None)
+
+        new_images = request.FILES.getlist("images") if hasattr(request.FILES, "getlist") else []
+        data.pop("images", None)
+
+        serializer = SpaceUpdateSerializer(
+            instance=space,
+            data=data,
+            partial=True,
+            context={"request": request},
+        )
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        space = serializer.save()
+
+        if cleaned_feature_ids:
+            qs = SpaceFeature.objects.filter(id__in=cleaned_feature_ids)
+            valid_ids = {obj.id for obj in qs}
+            missing = [fid for fid in set(cleaned_feature_ids) if fid not in valid_ids]
+            if missing:
+                return Response(
+                    {"features": [f"Invalid feature id(s): {missing}"]},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            space.features.add(*qs)
+
+        for img in new_images:
+            if img:
+                SpaceImage.objects.create(space=space, image=img)
+
+        return Response(SpaceSerializer(space, context={"request": request}).data, status=status.HTTP_200_OK)
