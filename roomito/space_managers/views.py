@@ -377,7 +377,7 @@ class SpaceFeatureView(APIView):
     permission_classes = [IsSpaceManagerUser]
 
     @extend_schema(
-        description="Retrieves the current and available features for a space managed by the authenticated space manager.",
+        description="Retrieves the available features for a space managed by the authenticated space manager.",
         request=None,
         responses={
             200: OpenApiResponse(
@@ -386,14 +386,10 @@ class SpaceFeatureView(APIView):
                 examples=[
                     OpenApiExample(
                         "Success",
-                        value={
-                            "space_name": "string",
-                            "current_features": [""],
-                            "available_features": [
-                                {"id": 1, "name": "string1"},
-                                {"id": 2, "name": "string2"}
-                            ]
-                        }
+                        value=[
+                            {"id": 1, "name": "string1"},
+                            {"id": 2, "name": "string2"}
+                        ]
                     )
                 ]
             ),
@@ -420,15 +416,21 @@ class SpaceFeatureView(APIView):
         }
     )
     def get(self, request, space_id):
-        space = get_object_or_404(Space, id=space_id, space_manager__user=request.user)
-        features = SpaceFeature.objects.all()
-        space_features = space.features.all()
+        try:
+            space = get_object_or_404(Space, id=space_id, space_manager__user=request.user)
+            current_features = space.features.all() 
+            all_features = SpaceFeature.objects.all() 
+            available_features = all_features.exclude(id__in=current_features.values('id'))
 
-        return Response({
-            "space_name": space.name,
-            "current_features": [feature.name for feature in space_features],
-            "available_features": SpaceFeatureSerializer(features, many=True).data
-        }, status=status.HTTP_200_OK) 
+            return Response(
+                SpaceFeatureSerializer(available_features, many=True).data,
+                status=status.HTTP_200_OK
+            )
+        except Exception as e:
+            return Response(
+                {"error": "An unexpected error occurred."},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
    
    
 @extend_schema(tags=['space_manager'])

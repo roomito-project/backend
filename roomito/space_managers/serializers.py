@@ -374,10 +374,21 @@ class SpaceCreateSerializer(serializers.ModelSerializer):
 
     def to_internal_value(self, data):
         mutable = data.copy()
+
+        features = mutable.get("features")
+        if features:
+            if isinstance(features, str):
+                try:
+                    mutable.setlist("features", [int(f.strip()) for f in features.split(",")])
+                except ValueError:
+                    pass 
+                
         if mutable.get('features') == "":
             mutable.pop('features') 
+            
         if mutable.get('images') == "":
-            mutable.pop('images')  
+            mutable.pop('images') 
+             
         return super().to_internal_value(mutable)
 
     def create(self, validated_data):
