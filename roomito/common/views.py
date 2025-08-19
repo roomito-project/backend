@@ -4,7 +4,7 @@ from rest_framework import status
 from django.contrib.auth.models import User
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.core.cache import cache
-from professors.models import Staff
+from staffs.models import Staff
 from students.models import Student
 from drf_spectacular.utils import extend_schema, OpenApiExample, OpenApiResponse
 from .serializers import UnifiedLoginSerializer, TokenResponseSerializer, ErrorResponseSerializer

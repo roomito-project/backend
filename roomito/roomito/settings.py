@@ -19,7 +19,7 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     'students',
-    'professors',
+    'staffs',
     'space_managers',
     'rest_framework',
     'drf_spectacular',

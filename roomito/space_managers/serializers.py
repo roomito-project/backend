@@ -1,7 +1,7 @@
 from rest_framework import serializers
 from django.contrib.auth.models import User
 from .models import Space, SpaceImage, SpaceManager, Event, SpaceFeature, Schedule, Reservation
-from professors.models import Staff
+from staffs.models import Staff
 from students.models import Student
 from common.validators import validate_password_strength
 
