@@ -34,10 +34,11 @@ class IsSpaceManagerUser(IsAuthenticated):
     def has_permission(self, request, view):
         return super().has_permission(request, view) and hasattr(request.user, 'spacemanager')
     
-    
+
 @extend_schema(tags=['space_manager'])
 class SpaceManagerProfileView(APIView):
     permission_classes = [IsSpaceManagerUser]
+
     @extend_schema(
         responses={
             200: OpenApiResponse(
@@ -45,14 +46,24 @@ class SpaceManagerProfileView(APIView):
                 description="Space manager profile retrieved successfully.",
                 examples=[
                     OpenApiExample(
-                        "Success",
+                        name="Success",
                         value={
                             "first_name": "string",
                             "last_name": "string",
                             "email": "string@example.com",
-                            "username": "string",
+                            "username": "string"
                         },
                         response_only=True
+                    )
+                ]
+            ),
+            401: OpenApiResponse(
+                response=ErrorResponseSerializer,
+                description="Authentication credentials were not provided or invalid.",
+                examples=[
+                    OpenApiExample(
+                        name="Unauthorized",
+                        value={"detail": "Authentication credentials were not provided."}
                     )
                 ]
             ),
@@ -61,14 +72,23 @@ class SpaceManagerProfileView(APIView):
                 description="User is not a space manager.",
                 examples=[
                     OpenApiExample(
-                        "NotSpaceManager",
-                        value={"error": "User is not a space manager."},
-                        response_only=True
+                        name="NotSpaceManager",
+                        value={"error": "User is not a space manager."}
+                    )
+                ]
+            ),
+            500: OpenApiResponse(
+                response=ErrorResponseSerializer,
+                description="Server error while retrieving profile.",
+                examples=[
+                    OpenApiExample(
+                        name="ServerError",
+                        value={"error": "An unexpected error occurred while retrieving profile."}
                     )
                 ]
             )
         },
-            description="Retrieves the authenticated space manager's profile.",
+        description="Retrieves the authenticated space manager's profile."
     )
     def get(self, request):
         user = request.user
@@ -78,13 +98,13 @@ class SpaceManagerProfileView(APIView):
 
         manager = user.spacemanager
         serializer = SpaceManagerProfileSerializer(manager)
-        return Response(serializer.data, status=status.HTTP_200_OK)
-  
+        return Response(serializer.data, status=status.HTTP_200_OK)  
     
+
 @extend_schema(tags=['space_manager'])    
 class SpaceManagerProfileUpdateView(APIView):
     permission_classes = [IsSpaceManagerUser]
-    
+
     @extend_schema(
         request=SpaceManagerProfileUpdateSerializer,
         responses={
@@ -103,13 +123,13 @@ class SpaceManagerProfileUpdateView(APIView):
                 description="Invalid input or validation error.",
                 examples=[
                     OpenApiExample(
-                        name="UsernameError",
+                        name="DuplicateUsername",
                         value={"username": ["This username is already in use."]}
                     ),
-                    OpenApiExample(
-                        name="EmailError",
-                        value={"email": ["This email is already in use."]}
-                    ),
+                    # OpenApiExample( 
+                    #     name="DuplicateEmail",
+                    #     value={"email": ["This email is already in use."]}
+                    # ),
                     OpenApiExample(
                         name="MissingCurrentPassword",
                         value={"current_password": ["Current password is required to change password."]}
@@ -130,8 +150,28 @@ class SpaceManagerProfileUpdateView(APIView):
                     )
                 ]
             ),
+            403: OpenApiResponse(
+                response=ErrorResponseSerializer,
+                description="User is not a space manager.",
+                examples=[
+                    OpenApiExample(
+                        name="NotSpaceManager",
+                        value={"error": "User is not a space manager."}
+                    )
+                ]
+            ),
+            500: OpenApiResponse(
+                response=ErrorResponseSerializer,
+                description="Server error while updating profile.",
+                examples=[
+                    OpenApiExample(
+                        name="ServerError",
+                        value={"error": "An unexpected error occurred while updating profile."}
+                    )
+                ]
+            )
         },
-        description="Update profile information of the authenticated space manager"
+        description="Update profile information of the authenticated space manager."
     )    
     
     def patch(self, request):
@@ -146,7 +186,7 @@ class SpaceManagerProfileUpdateView(APIView):
             serializer.save()
             return Response({"message": "Profile updated successfully."}, status=status.HTTP_200_OK)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-    
+        
 
 @extend_schema(tags=['space'])      
 class SpaceListView(APIView):
@@ -158,8 +198,9 @@ class SpaceListView(APIView):
                 name='space_type',
                 type=OpenApiTypes.STR,
                 location=OpenApiParameter.QUERY,
-                description='Filter spaces by type (hall, class, labratory and office)',
+                description='Filter spaces by type',
                 required=False,
+                enum=['hall', 'class', 'labratory', 'office'] 
             ),
         ],
         responses={
@@ -172,7 +213,7 @@ class SpaceListView(APIView):
                         value=[
                             {
                                 "id": 1,
-                                "space_type": "string",
+                                "space_type": "hall",
                                 "name": "string",
                                 "address": "string",
                                 "capacity": 50,
@@ -209,16 +250,26 @@ class SpaceListView(APIView):
                         name="NotFound",
                         value={"error": "No spaces available."},
                         response_only=True
+                    ),
+                    OpenApiExample(
+                        name="InvalidSpaceType",
+                        value={"error": "No spaces found for the specified space type."}  # اگه `space_type` نامعتبر باشه
                     )
                 ]
             ),
             500: OpenApiResponse(
                 response=ErrorResponseSerializer,
                 description="Unexpected server error.",
-                examples=[OpenApiExample(
-                    name="ServerErrorExample",
-                    value={"error": "An unexpected error occurred."}
-                )]
+                examples=[
+                    OpenApiExample(
+                        name="ServerErrorExample",
+                        value={"error": "An unexpected error occurred."}
+                    ),
+                    OpenApiExample(
+                        name="DatabaseError",
+                        value={"error": "Failed to retrieve space data from database."}
+                    )
+                ]
             )
         },
         description="Retrieves the list of all available spaces for authenticated users."
@@ -237,7 +288,7 @@ class SpaceListView(APIView):
 
         data = SpaceListSerializer(qs, many=True, context={'request': request}).data
         return Response(data, status=status.HTTP_200_OK)
-
+    
 
 @extend_schema(tags=['event'])      
 class EventListView(APIView):
@@ -396,11 +447,11 @@ class SpaceFeatureView(APIView):
         request=None,
         responses={
             200: OpenApiResponse(
-                response=SpaceFeatureSerializer,
-                description="space features retrieved Successfully",
+                response=SpaceFeatureSerializer(many=True), 
+                description="Space features retrieved successfully.",
                 examples=[
                     OpenApiExample(
-                        "Success",
+                        name="Success",
                         value=[
                             {"id": 1, "name": "string1"},
                             {"id": 2, "name": "string2"}
@@ -408,23 +459,41 @@ class SpaceFeatureView(APIView):
                     )
                 ]
             ),
-            404: OpenApiResponse(
+            401: OpenApiResponse(
                 response=ErrorResponseSerializer,
-                description="Space not found or user is not the manager",
+                description="User is not authenticated or not a space manager.",
                 examples=[
                     OpenApiExample(
-                        "NotFound",
+                        name="Unauthorized",
+                        value={"error": "Authentication credentials were not provided."}
+                    ),
+                    OpenApiExample(
+                        name="NotSpaceManager",
+                        value={"error": "User is not a space manager."}
+                    )
+                ]
+            ),
+            404: OpenApiResponse(
+                response=ErrorResponseSerializer,
+                description="Space not found or user is not the manager.",
+                examples=[
+                    OpenApiExample(
+                        name="NotFound",
                         value={"error": "Space not found or you are not authorized to manage it."}
                     )
                 ]
             ),
             500: OpenApiResponse(
                 response=ErrorResponseSerializer,
-                description="Internal server error",
+                description="Internal server error.",
                 examples=[
                     OpenApiExample(
-                        "ServerError",
+                        name="ServerError",
                         value={"error": "An unexpected error occurred."}
+                    ),
+                    OpenApiExample(
+                        name="DatabaseError",
+                        value={"error": "Failed to retrieve feature data from database."}
                     )
                 ]
             )
@@ -446,21 +515,22 @@ class SpaceFeatureView(APIView):
                 {"error": "An unexpected error occurred."},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
-   
-   
+            
+
 @extend_schema(tags=['space_manager'])
 class SpaceUpdateFeatureView(APIView):
     permission_classes = [IsSpaceManagerUser]
 
     @extend_schema(
         description="Allows a space manager to add existing features to a space using their IDs.",
-        request=FeatureIdsSerializer, 
+        request=FeatureIdsSerializer,
         responses={
             200: OpenApiResponse(
-                description="Features updated successfully",
+                response=SuccessResponseSerializer,
+                description="Features updated successfully.",
                 examples=[
                     OpenApiExample(
-                        "Success",
+                        name="Success",
                         value={
                             "message": "Features updated successfully.",
                             "updated_features": ["string1", "string2"]
@@ -470,35 +540,57 @@ class SpaceUpdateFeatureView(APIView):
             ),
             400: OpenApiResponse(
                 response=ErrorResponseSerializer,
-                description="Invalid data or no feature IDs provided",
+                description="Invalid data or no feature IDs provided.",
                 examples=[
                     OpenApiExample(
-                        "invalid_error",
+                        name="InvalidData",
                         value={"error": "No feature IDs provided."}
+                    ),
+                    OpenApiExample(
+                        name="InvalidFormat",
+                        value={"feature_ids": ["A valid list of integers is required."]}  
                     )
                 ]
             ),
             404: OpenApiResponse(
                 response=ErrorResponseSerializer,
-                description="Space not found, user is not the manager, or feature ID is invalid",
+                description="Space not found, user is not the manager, or feature ID is invalid.",
                 examples=[
                     OpenApiExample(
-                        "NotFound",
+                        name="NotFound",
                         value={"error": "Space not found or you are not authorized to manage it."}
                     ),
                     OpenApiExample(
-                        "InvalidFeature",
+                        name="InvalidFeature",
                         value={"error": "One or more feature IDs are invalid: [999]"}
+                    )
+                ]
+            ),
+            401: OpenApiResponse(
+                response=ErrorResponseSerializer,
+                description="User is not authenticated or not a space manager.",
+                examples=[
+                    OpenApiExample(
+                        name="Unauthorized",
+                        value={"error": "Authentication credentials were not provided."}
+                    ),
+                    OpenApiExample(
+                        name="NotSpaceManager",
+                        value={"error": "User is not a space manager."}
                     )
                 ]
             ),
             500: OpenApiResponse(
                 response=ErrorResponseSerializer,
-                description="Internal server error",
+                description="Internal server error.",
                 examples=[
                     OpenApiExample(
-                        "ServerError",
+                        name="ServerError",
                         value={"error": "An unexpected error occurred."}
+                    ),
+                    OpenApiExample(
+                        name="DatabaseError",
+                        value={"error": "Failed to update features in database."}
                     )
                 ]
             )
@@ -515,19 +607,8 @@ class SpaceUpdateFeatureView(APIView):
 
         invalid_features = [fid for fid in feature_ids if not SpaceFeature.objects.filter(id=fid).exists()]
         if invalid_features:
-            return Response(
-                {"error": f"One or more feature IDs are invalid: {invalid_features}"},
-                status=status.HTTP_404_NOT_FOUND
-            )
-
-        features_to_add = SpaceFeature.objects.filter(id__in=feature_ids)
-        space.features.add(*features_to_add)
-
-        return Response({
-            "message": "Features updated successfully.",
-            "updated_features": [f.name for f in space.features.all()]
-        }, status=status.HTTP_200_OK)
-        
+            return Response
+                            
 
 @extend_schema(tags=['reservation'])
 class ReservationCreateView(APIView):
@@ -547,7 +628,7 @@ class ReservationCreateView(APIView):
                             "reservation_type": "class",
                             "reservee_type": "student",
                             "phone_number": "09123456789",
-                            "description": "stirng",
+                            "description": "string",
                             "schedule": {
                                 "start_time": "09:00:00",
                                 "end_time": "11:00:00",
@@ -562,17 +643,20 @@ class ReservationCreateView(APIView):
                 description="Invalid data provided (e.g., invalid time range or missing required fields).",
                 examples=[
                     OpenApiExample(
-                    name="SameTime",
-                    value={"schedule": "Start and end time cannot be the same."},
-                    response_only=True
+                        name="SameTime",
+                        value={"schedule": ["Start and end time cannot be the same."]}
                     ),
                     OpenApiExample(
                         name="BadRequest",
-                        value={"shcedule": "Start time must be before end time."}
+                        value={"schedule": ["Start time must be before end time."]}
                     ),
                     OpenApiExample(
                         name="ValidationError",
-                        value={"reservee_type": ["You must be a student to select this reservee type."]}
+                        value={"reservee_type": ["You must be a student or staff to create a reservation."]}
+                    ),
+                    OpenApiExample(
+                        name="InvalidPhoneNumber",
+                        value={"phone_number": ["Phone number must be exactly 11 digits."]}
                     )
                 ]
             ),
@@ -613,16 +697,24 @@ class ReservationCreateView(APIView):
                     OpenApiExample(
                         name="Unprocessable",
                         value={"reservation_type": ["Invalid reservation type."]}
+                    ),
+                    OpenApiExample(
+                        name="UnprocessableReservee",
+                        value={"reservee_type": ["Invalid reservee type."]}
                     )
                 ]
             ),
             500: OpenApiResponse(
                 response=ErrorResponseSerializer,
-                description="Internal server error (e.g., database failure).",
+                description="Internal server error (e.g., database failure or email sending issue).",
                 examples=[
                     OpenApiExample(
                         name="ServerError",
                         value={"error": "An unexpected error occurred."}
+                    ),
+                    OpenApiExample(
+                        name="EmailError",
+                        value={"error": "Failed to send reservation request to space manager."}
                     )
                 ]
             )
@@ -659,8 +751,8 @@ class ReservationCreateView(APIView):
             return Response({"error": str(e)}, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
         except Exception as e:
             return Response({"error": "An unexpected error occurred."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
         
+
 @extend_schema(tags=['space_manager'])
 class ManagerReservationListView(APIView):
     permission_classes = [IsSpaceManagerUser]
@@ -681,12 +773,18 @@ class ManagerReservationListView(APIView):
                                 "date": "2025-08-15",
                                 "start_time": "09:00:00",
                                 "end_time": "11:00:00",
-                                "status_display": "Under Review", 
+                                "status_display": "Under Review",
                                 "reservation_type": "string",
                                 "description": "string",
-                                "reservee_name": "string"
+                                "reservee_name": "string",
+                                "reservee_type": "string",
+                                "phone_number": "09123456789"
                             }
                         ]
+                    ),
+                    OpenApiExample(
+                        name="NoReservations",
+                        value={"message": "No spaces managed by you."}  
                     )
                 ]
             ),
@@ -717,6 +815,10 @@ class ManagerReservationListView(APIView):
                     OpenApiExample(
                         name="ServerError",
                         value={"error": "An unexpected error occurred."}
+                    ),
+                    OpenApiExample(
+                        name="DatabaseError",
+                        value={"error": "Failed to retrieve reservation data from database."}
                     )
                 ]
             )
@@ -743,11 +845,11 @@ class SpaceDetailView(APIView):
     permission_classes = [IsAuthenticated]
 
     @extend_schema(
-        description="Retrieve the details of a specific space for the authenticated users",
+        description="Retrieve the details of a specific space for the authenticated users.",
         responses={
             200: OpenApiResponse(
                 response=SpaceSerializer(),
-                description="Space details retrieved successfully",
+                description="Space details retrieved successfully.",
                 examples=[
                     OpenApiExample(
                         name="success",
@@ -770,7 +872,7 @@ class SpaceDetailView(APIView):
                                 {"id": 2, "name": "string"}
                             ],
                             "images": [
-                            {"id": 1, "url": "http://localhost:8000/media/space_photos/1.jpg"}
+                                {"id": 1, "url": "http://localhost:8000/media/space_photos/1.jpg"}
                             ]
                         }
                     )
@@ -786,6 +888,20 @@ class SpaceDetailView(APIView):
                     )
                 ]
             ),
+            400: OpenApiResponse(
+                response=ErrorResponseSerializer,
+                description="Invalid space ID provided (e.g., negative or non-integer value).",
+                examples=[
+                    OpenApiExample(
+                        name="bad_request",
+                        value={"error": "Invalid space ID. Must be a positive integer."}
+                    ),
+                    OpenApiExample(
+                        name="NonInteger",
+                        value={"error": "Space ID must be an integer."}  # اگه `space_id` رشته باشه
+                    )
+                ]
+            ),
             404: OpenApiResponse(
                 response=ErrorResponseSerializer,
                 description="Space not found with the given ID.",
@@ -796,16 +912,6 @@ class SpaceDetailView(APIView):
                     )
                 ]
             ),
-            400: OpenApiResponse(
-                response=ErrorResponseSerializer,
-                description="Invalid space ID provided (e.g., negative or non-integer value).",
-                examples=[
-                    OpenApiExample(
-                        name="bad_request",
-                        value={"error": "Invalid space ID. Must be a positive integer."}
-                    )
-                ]
-            ),
             500: OpenApiResponse(
                 response=ErrorResponseSerializer,
                 description="An unexpected internal server error occurred.",
@@ -813,6 +919,10 @@ class SpaceDetailView(APIView):
                     OpenApiExample(
                         name="internal_error",
                         value={"error": "An unexpected error occurred. Please try again later."}
+                    ),
+                    OpenApiExample(
+                        name="DatabaseError",
+                        value={"error": "Failed to retrieve space details from database."}
                     )
                 ]
             )
@@ -841,12 +951,17 @@ class SpaceDetailView(APIView):
                 {"error": f"Space with ID {space_id} not found."},
                 status=status.HTTP_404_NOT_FOUND
             )
+        except ValueError:
+            return Response(
+                {"error": "Space ID must be an integer."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
         except Exception:
             return Response(
                 {"error": "An unexpected error occurred."},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
-            
+                        
 
 @extend_schema(tags=["space_manager"])
 class ManagerSpaceListView(APIView):
@@ -854,14 +969,15 @@ class ManagerSpaceListView(APIView):
 
     @extend_schema(
         parameters=[
-        OpenApiParameter(
-            name='space_type',
-            type=OpenApiTypes.STR,
-            location=OpenApiParameter.QUERY,
-            description='Filter spaces by type (hall, class, labratory and office)',
-            required=False,
-        ),
-    ],
+            OpenApiParameter(
+                name='space_type',
+                type=OpenApiTypes.STR,
+                location=OpenApiParameter.QUERY,
+                description='Filter spaces by type',
+                required=False,
+                enum=['hall', 'class', 'labratory', 'office']
+            ),
+        ],
         responses={
             200: OpenApiResponse(
                 response=ManagerSpaceListSerializer(many=True),
@@ -886,37 +1002,39 @@ class ManagerSpaceListView(APIView):
                 examples=[OpenApiExample(
                     name="UnauthorizedExample",
                     value={"error": "Authentication credentials were not provided."}
-                )
-            ]
-        ),
-        403: OpenApiResponse(
-            response=ErrorResponseSerializer,
-            description="Forbidden – User is not the manager of this space.",
-            examples=[OpenApiExample(
-                name="ForbiddenExample",
-                value={"error": "You are not authorized to view this space."}
-                )
-            ]
-        ),
-        404: OpenApiResponse(
-            response=ErrorResponseSerializer,
-            description="Not Found – The requested space does not exist or is not managed by the user.",
-            examples=[OpenApiExample(
-                name="NotFoundExample",
-                value={"error": "Space not found."}
-            )]
-        ),
-        500: OpenApiResponse(
-            response=ErrorResponseSerializer,
-            description="Unexpected server error.",
-            examples=[OpenApiExample(
-                name="ServerErrorExample",
-                value={"error": "An unexpected error occurred."}
-            )]
-        )
-    },
+                )]
+            ),
+            403: OpenApiResponse(
+                response=ErrorResponseSerializer,
+                description="Forbidden – User is not the manager of this space.",
+                examples=[OpenApiExample(
+                    name="ForbiddenExample",
+                    value={"error": "You are not a space manager."}
+                )]
+            ),
+            404: OpenApiResponse(
+                response=ErrorResponseSerializer,
+                description="Not Found – The requested space does not exist or is not managed by the user.",
+                examples=[OpenApiExample(
+                    name="NotFoundExample",
+                    value={"error": "No spaces managed by you."}
+                )]
+            ),
+            500: OpenApiResponse(
+                response=ErrorResponseSerializer,
+                description="Unexpected server error.",
+                examples=[OpenApiExample(
+                    name="ServerErrorExample",
+                    value={"error": "An unexpected error occurred."}
+                ),
+                OpenApiExample(
+                    name="DatabaseError",
+                    value={"error": "Failed to retrieve managed spaces from database."}
+                )]
+            )
+        },
         description="List spaces managed by the authenticated space manager.",
-)
+    )
     def get(self, request):
         try:
             manager = request.user.spacemanager
@@ -928,11 +1046,14 @@ class ManagerSpaceListView(APIView):
         queryset = Space.objects.filter(space_manager=manager).prefetch_related("images").order_by("id")
         
         if space_type:
-            queryset = queryset.filter(space_type=space_type) 
+            queryset = queryset.filter(space_type=space_type)
+
+        if not queryset.exists(): 
+            return Response({"error": "No spaces managed by you."}, status=status.HTTP_404_NOT_FOUND)
 
         data = ManagerSpaceListSerializer(queryset, many=True).data
         return Response(data, status=status.HTTP_200_OK)
-
+    
 
 @extend_schema(tags=["space_manager"])
 class ManagerSpaceDetailView(APIView):
@@ -953,7 +1074,7 @@ class ManagerSpaceDetailView(APIView):
                         "address": "string",
                         "capacity": 50,
                         "description": "string",
-                        "features": [{"id":1,"name":"string"}],
+                        "features": [{"id": 1, "name": "string"}],
                         "phone_number": "string",
                         "images": [
                             {"id": 1, "url": "http://localhost:8000/media/space_photos/1.jpg"}
@@ -966,43 +1087,88 @@ class ManagerSpaceDetailView(APIView):
                 description="Unauthorized – Authentication credentials were not provided.",
                 examples=[
                     OpenApiExample(
-                    name="Unauthorized",
-                    value={"error": "Authentication credentials were not provided."}
+                        name="Unauthorized",
+                        value={"error": "Authentication credentials were not provided."}
+                    )
+                ]
+            ),
+            403: OpenApiResponse(
+                response=ErrorResponseSerializer,
+                description="Forbidden – User is not a space manager.",
+                examples=[OpenApiExample(
+                    name="ForbiddenExample",
+                    value={"error": "You are not a space manager."}
                 )]
-        ),
-        403: OpenApiResponse(
-            response=ErrorResponseSerializer,
-            description="Forbidden – User is not a space manager.",
-            examples=[OpenApiExample(
-                name="ForbiddenExample",
-                value={"error": "You are not authorized to view this list."}
-            )]
-        ),
-        500: OpenApiResponse(
-            response=ErrorResponseSerializer,
-            description="Unexpected server error.",
-            examples=[OpenApiExample(
-                name="ServerErrorExample",
-                value={"error": "An unexpected error occurred."}
-            )]
-        )
-    }
-)
+            ),
+            404: OpenApiResponse(
+                response=ErrorResponseSerializer,
+                description="Not Found – The requested space does not exist or is not managed by the user.",
+                examples=[OpenApiExample(
+                    name="NotFoundExample",
+                    value={"error": "Space with ID 10 not found or not managed by you."}
+                )]
+            ),
+            400: OpenApiResponse(
+                response=ErrorResponseSerializer,
+                description="Invalid space ID provided (e.g., negative or non-integer value).",
+                examples=[
+                    OpenApiExample(
+                        name="bad_request",
+                        value={"error": "Invalid space ID. Must be a positive integer."}
+                    ),
+                    OpenApiExample(
+                        name="NonInteger",
+                        value={"error": "Space ID must be an integer."}
+                    )
+                ]
+            ),
+            500: OpenApiResponse(
+                response=ErrorResponseSerializer,
+                description="Unexpected server error.",
+                examples=[OpenApiExample(
+                    name="ServerErrorExample",
+                    value={"error": "An unexpected error occurred."}
+                ),
+                OpenApiExample(
+                    name="DatabaseError",
+                    value={"error": "Failed to retrieve space details from database."}
+                )]
+            )
+        }
+    )
     def get(self, request, space_id: int):
         manager = getattr(request.user, 'spacemanager', None)
         if not manager:
             return Response({"error": "You are not a space manager."}, status=status.HTTP_403_FORBIDDEN)
 
-        space = get_object_or_404(
-            Space.objects
-            .prefetch_related("features", "images")
-            .select_related("space_manager", "space_manager__user"),
-            pk=space_id, space_manager=manager
-        )
-        data = ManagerSpaceDetailSerializer(space, context={'request': request}).data
-        return Response(data, status=status.HTTP_200_OK)
-        
+        try:
+            if space_id <= 0:
+                return Response(
+                    {"error": "Invalid space ID. Must be a positive integer."},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
 
+            space = get_object_or_404(
+                Space.objects
+                .prefetch_related("features", "images")
+                .select_related("space_manager", "space_manager__user"),
+                pk=space_id, space_manager=manager
+            )
+            data = ManagerSpaceDetailSerializer(space, context={'request': request}).data
+            return Response(data, status=status.HTTP_200_OK)
+
+        except ValueError: 
+            return Response(
+                {"error": "Space ID must be an integer."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        except Exception:
+            return Response(
+                {"error": "An unexpected error occurred."},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+                    
+                    
 @extend_schema(tags=['space_manager'])
 class ManagerSpaceCreateView(APIView):
     permission_classes = [IsSpaceManagerUser]
@@ -1034,15 +1200,32 @@ class ManagerSpaceCreateView(APIView):
             ),
             400: OpenApiResponse(
                 response=ErrorResponseSerializer,
-                description="Validation error",
+                description="Validation error.",
                 examples=[OpenApiExample(
                     "BadRequest",
                     value={"capacity": ["Capacity must be greater than zero."]}
-                )]
+                ),
+                OpenApiExample(
+                    "MissingRequired",
+                    value={"space_type": ["This field is required."]}
+                ),
+                OpenApiExample(
+                    "InvalidFeatures",
+                    value={"features": ["Invalid pk '999' - object does not exist."]}
+                ),
+                OpenApiExample(
+                    "InvalidImages",
+                    value={"images": ["No file was submitted. Check the encoding type on the form."]}
+                ),
+                OpenApiExample(
+                    "InvalidFormat",
+                    value={"features": ["A valid list of integers or comma-separated string is required."]}
+                )
+                ]
             ),
             401: OpenApiResponse(
                 response=ErrorResponseSerializer,
-                description="Unauthorized",
+                description="Unauthorized.",
                 examples=[OpenApiExample(
                     "Unauthorized",
                     value={"error": "Authentication credentials were not provided."}
@@ -1058,11 +1241,20 @@ class ManagerSpaceCreateView(APIView):
             ),
             500: OpenApiResponse(
                 response=ErrorResponseSerializer,
-                description="Server error",
+                description="Server error.",
                 examples=[OpenApiExample(
                     "ServerError",
                     value={"error": "An unexpected error occurred."}
-                )]
+                ),
+                OpenApiExample(
+                    "DatabaseError",
+                    value={"error": "Failed to save space to database."}
+                ),
+                OpenApiExample(
+                    "ImageError",
+                    value={"error": "Failed to process uploaded images."}
+                )
+                ]
             )
         }
     )
@@ -1114,7 +1306,7 @@ class ManagerSpaceUpdateView(APIView):
             ),
             400: OpenApiResponse(
                 response=ErrorResponseSerializer,
-                description="Validation error",
+                description="Validation error.",
                 examples=[
                     OpenApiExample(
                         "CapacityError",
@@ -1123,12 +1315,24 @@ class ManagerSpaceUpdateView(APIView):
                     OpenApiExample(
                         "InvalidFeatureError",
                         value={"features": ["Invalid pk '999' - object does not exist."]}
+                    ),
+                    OpenApiExample(
+                        "MissingRequired",
+                        value={"space_type": ["This field is required."]}
+                    ),
+                    OpenApiExample(
+                        "InvalidImages",
+                        value={"images": ["No file was submitted. Check the encoding type on the form."]}
+                    ),
+                    OpenApiExample(
+                        "InvalidFormat",
+                        value={"features": ["A valid list of integers or comma-separated string is required."]}
                     )
                 ]
             ),
             403: OpenApiResponse(
                 response=ErrorResponseSerializer,
-                description="Forbidden – Not space manager of this space",
+                description="Forbidden – Not space manager of this space.",
                 examples=[
                     OpenApiExample(
                         "ForbiddenExample",
@@ -1138,7 +1342,7 @@ class ManagerSpaceUpdateView(APIView):
             ),
             404: OpenApiResponse(
                 response=ErrorResponseSerializer,
-                description="Space not found",
+                description="Space not found.",
                 examples=[
                     OpenApiExample(
                         "NotFoundExample",
@@ -1148,11 +1352,19 @@ class ManagerSpaceUpdateView(APIView):
             ),
             500: OpenApiResponse(
                 response=ErrorResponseSerializer,
-                description="Unexpected server error",
+                description="Unexpected server error.",
                 examples=[
                     OpenApiExample(
                         "ServerErrorExample",
                         value={"error": "An unexpected error occurred."}
+                    ),
+                    OpenApiExample(
+                        "DatabaseError",
+                        value={"error": "Failed to update space in database."}
+                    ),
+                    OpenApiExample(
+                        "ImageError",
+                        value={"error": "Failed to process uploaded images."}
                     )
                 ]
             ),

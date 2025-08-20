@@ -40,12 +40,24 @@ class StudentRegisterView(APIView):
                 description="Validation error",
                 examples=[
                     OpenApiExample(
+                        name="InvalidStudentID",
+                        value={"student_id": ["Student ID must be numeric."]}
+                    ),
+                    OpenApiExample(
+                        name="StudentIDTooLong",
+                        value={"student_id": ["Student ID cannot be more than 12 digits."]}
+                    ),
+                    OpenApiExample(
                         name="InvalidNationalID",
+                        value={"national_id": ["National ID must be numeric."]}
+                    ),
+                    OpenApiExample(
+                        name="NationalIDLength",
                         value={"national_id": ["National ID must be exactly 10 digits."]}
                     ),
                     OpenApiExample(
-                        name="InvalidStudentID",
-                        value={"student_id": ["Student ID must not exceed 12 digits."]}
+                        name="InvalidImage",
+                        value={"student_card_photo": ["Only image files are allowed."]}
                     )
                 ]
             ),
@@ -59,8 +71,12 @@ class StudentRegisterView(APIView):
                     # ),
                     OpenApiExample(
                         name="DuplicateStudentID",
-                        value={"error": "Student ID already exists."}
-                    )
+                        value={"student_id": ["This student ID is already in use."]}
+                    ),
+                    OpenApiExample(
+                        name="DuplicateNationalID",
+                        value={"national_id": ["This national ID is already in use."]}
+                    ),
                 ]
             ),
             500: OpenApiResponse(
@@ -108,10 +124,11 @@ class StudentRegisterView(APIView):
             return Response({"error": "An unexpected error occurred."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
+
 @extend_schema(tags=['student'])    
 class StudentProfileUpdateView(APIView):
     permission_classes = [IsAuthenticated]
-    
+
     @extend_schema(
         request=StudentProfileUpdateSerializer,
         responses={
@@ -130,17 +147,17 @@ class StudentProfileUpdateView(APIView):
                 description="Invalid input or validation error.",
                 examples=[
                     OpenApiExample(
-                        name="StudentIDError",
-                        value={"student_id": ["This student ID is already in use."]}
+                        name="InvalidNationalID",
+                        value={"national_id": ["National ID must be exactly 10 digits."]}
                     ),
                     OpenApiExample(
-                        name="NationalIDError",
-                        value={"national_id": ["This national ID is already in use."]}
+                        name="InvalidStudentID",
+                        value={"student_id": ["Student ID must not exceed 12 digits."]}
                     ),
-                    OpenApiExample(
-                        name="EmailError",
-                        value={"Email": ["This email is already in use."]}
-                    ),
+                    # OpenApiExample(
+                    #     name="DuplicateEmail",
+                    #     value={"email": ["This email is already in use."]}
+                    # ),
                     OpenApiExample(
                         name="MissingCurrentPassword",
                         value={"current_password": ["Current password is required to change password."]}
@@ -149,6 +166,10 @@ class StudentProfileUpdateView(APIView):
                         name="IncorrectCurrentPassword",
                         value={"current_password": ["Current password is incorrect."]}
                     ),
+                    OpenApiExample(
+                        name="InvalidImage",
+                        value={"student_card_photo": ["Only image files are allowed."]}
+                    )
                 ]
             ),
             401: OpenApiResponse(
@@ -161,10 +182,47 @@ class StudentProfileUpdateView(APIView):
                     )
                 ]
             ),
+            403: OpenApiResponse(
+                response=ErrorResponseSerializer,
+                description="User is not a student.",
+                examples=[
+                    OpenApiExample(
+                        name="NotStudent",
+                        value={"error": "User is not a student."}
+                    )
+                ]
+            ),
+             409: OpenApiResponse(
+                response=ErrorResponseSerializer,
+                description="Conflict - duplicate data",
+                examples=[
+                    # OpenApiExample(
+                    #     name="DuplicateEmail",
+                    #     value={"error": "Email already exists."}
+                    # ),
+                    OpenApiExample(
+                        name="DuplicateStudentID",
+                        value={"student_id": ["This student ID is already in use."]}
+                    ),
+                    OpenApiExample(
+                        name="DuplicateNationalID",
+                        value={"national_id": ["This national ID is already in use."]}
+                    ),
+                ]
+            ),
+            500: OpenApiResponse(
+                response=ErrorResponseSerializer,
+                description="Server error while updating profile.",
+                examples=[
+                    OpenApiExample(
+                        name="ServerError",
+                        value={"error": "An unexpected error occurred while updating profile."}
+                    )
+                ]
+            )
         },
-        description="Update profile information of the authenticated student"
+        description="Update profile information of the authenticated student."
     )
-    
     def patch(self, request):
         student = request.user.student_profile
         serializer = StudentProfileUpdateSerializer(
@@ -177,7 +235,7 @@ class StudentProfileUpdateView(APIView):
             serializer.save()
             return Response({"message": "Profile updated successfully."}, status=status.HTTP_200_OK)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-    
+        
 
 @extend_schema(tags=['student'])
 class StudentProfileView(APIView):
@@ -187,30 +245,49 @@ class StudentProfileView(APIView):
         responses={
             200: OpenApiResponse(
                 response=StudentProfileSerializer,
-                description="Student profile retrieved successfully",
+                description="Student profile retrieved successfully.",
                 examples=[
                     OpenApiExample(
-                        "ProfileExample",
+                        name="ProfileExample",
                         value={
                             "first_name": "string",
                             "last_name": "string",
                             "email": "string@example.com",
                             "student_id": "string",
                             "national_id": "string",
-                            "student_card_photo": "string.jpg"
+                            "student_card_photo": "http://example.com/student_cards/string.jpg"
                         },
                         response_only=True
                     )
                 ]
             ),
-            403: OpenApiResponse(
+            401: OpenApiResponse(
                 response=ErrorResponseSerializer,
-                description="User is not a student",
+                description="Authentication credentials were not provided or invalid.",
                 examples=[
                     OpenApiExample(
-                        "NotStudent",
-                        value={"error": "User is not a student."},
-                        response_only=True
+                        name="Unauthorized",
+                        value={"detail": "Authentication credentials were not provided."}
+                    )
+                ]
+            ),
+            403: OpenApiResponse(
+                response=ErrorResponseSerializer,
+                description="User is not a student.",
+                examples=[
+                    OpenApiExample(
+                        name="NotStudent",
+                        value={"error": "User is not a student."}
+                    )
+                ]
+            ),
+            500: OpenApiResponse(
+                response=ErrorResponseSerializer,
+                description="Server error while retrieving profile.",
+                examples=[
+                    OpenApiExample(
+                        name="ServerError",
+                        value={"error": "An unexpected error occurred while retrieving profile."}
                     )
                 ]
             )
@@ -226,4 +303,3 @@ class StudentProfileView(APIView):
         student = user.student_profile
         serializer = StudentProfileSerializer(student, context={'request': request})
         return Response(serializer.data, status=status.HTTP_200_OK)
-    

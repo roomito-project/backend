@@ -23,7 +23,7 @@ class StaffRegisterView(APIView):
         request=StaffRegisterSerializer,
         responses={
             200: OpenApiResponse(
-                response=SuccessResponseSerializer,
+                response=SuccessResponseSerializer, 
                 description="Successful registration",
                 examples=[
                     OpenApiExample(
@@ -34,15 +34,35 @@ class StaffRegisterView(APIView):
             ),
             400: OpenApiResponse(
                 response=ErrorResponseSerializer,
-                description="validation error",
+                description="Validation error",
                 examples=[
                     OpenApiExample(
-                        "Invalid National ID",
+                        name="MissingField",
+                        value={"first_name": ["This field is required."]}
+                    ),
+                    OpenApiExample(
+                        name="MissingField",
+                        value={"last_name": ["This field is required."]}
+                    ),
+                    OpenApiExample(
+                        name="InvalidNationalId",
                         value={"national_id": ["National ID must be exactly 10 digits."]}
                     ),
                     OpenApiExample(
-                        "Invalid Personnel Code",
+                        name="InvalidPersonnelCode",
                         value={"personnel_code": ["Personnel code cannot be more than 10 characters."]}
+                    ),
+                    OpenApiExample(
+                        name="InvalidEmail",
+                        value={"email": ["Enter a valid email address."]}
+                    ),
+                    OpenApiExample(
+                        name="DuplicatePersonnelCode",
+                        value={"personnel_code": ["This personnel code already exists."]}
+                    ),
+                    OpenApiExample(
+                        name="DuplicateNationalId",
+                        value={"national_id": ["This national ID already exists."]}
                     )
                 ]
             ),
@@ -52,7 +72,7 @@ class StaffRegisterView(APIView):
                 examples=[
                     OpenApiExample(
                         name="StaffNotFound",
-                        value={"error": "Staff not found or email does not match the registered email."},
+                        value={"error": "Staff not found or details do not match the registered data."},
                     )
                 ]
             ),
@@ -63,9 +83,13 @@ class StaffRegisterView(APIView):
                     OpenApiExample(
                         name="EmailSendError",
                         value={"error": "Failed to send verification email."},
+                    ),
+                    OpenApiExample(
+                        name="CacheError",
+                        value={"error": "Failed to store temporary password in cache."},
                     )
                 ]
-            ),
+            )
         },
         description="Staff registration by University email and etc."
     )
@@ -95,7 +119,10 @@ class StaffRegisterView(APIView):
 
         temp_password = get_random_string(length=10, allowed_chars='abcdefghijklmnopqrstuvwxyz!@#$%^&*')
 
-        cache.set(f"staff_tmp_pass_{staff.personnel_code}", temp_password)
+        try:
+            cache.set(f"staff_tmp_pass_{staff.personnel_code}", temp_password)
+        except Exception:
+            return Response({"error": "Failed to store temporary password in cache."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
         try:
             send_mail(
@@ -113,61 +140,96 @@ class StaffRegisterView(APIView):
 
 @extend_schema(tags=['staff'])
 class StaffProfileUpdateView(APIView):
-    permission_classes = [IsAuthenticated]   
-    
+    permission_classes = [IsAuthenticated]
+
     @extend_schema(
-    request=StaffProfileUpdateSerializer,
-    responses={
-        200: OpenApiResponse(
-            response=SuccessResponseSerializer,
-            description="Profile updated successfully.",
-            examples=[
-                OpenApiExample(
-                    name="UpdateSuccess",
-                    value={"message": "Profile updated successfully."}
-                )
-            ]
-        ),
-        400: OpenApiResponse(
-            response=ErrorResponseSerializer,
-            description="Invalid input or validation error.",
-            examples=[
-                OpenApiExample(
-                    name="ValidationError",
-                    value={"personnel_code": ["This personnel code is already in use."]}
-                ),
-                OpenApiExample(
-                    name="ValidationError",
-                    value={"national_code": ["This national code is already in use."]}
-                ),
-                # OpenApiExample(
-                #     name="ValidationError",
-                #     value={"email": ["This email is already in use."]}
-                # ),
-                OpenApiExample(
-                    name="MissingCurrentPassword",
-                    value={"current_password": ["Current password is required to change password."]}
-                ),
-                OpenApiExample(
-                    name="IncorrectCurrentPassword",
-                    value={"current_password": ["Current password is incorrect."]}
-                ),
-            ]
-        ),
-        401: OpenApiResponse(
-            response=ErrorResponseSerializer,
-            description="Authentication credentials were not provided or invalid.",
-            examples=[
-                OpenApiExample(
-                    name="Unauthorized",
-                    value={"detail": "Authentication credentials were not provided."}
-                )
-            ]
-        ),
-    },
-        description="update profile informations of the authenticated Staff"
-)
-    
+        request=StaffProfileUpdateSerializer,
+        responses={
+            200: OpenApiResponse(
+                response=SuccessResponseSerializer,
+                description="Profile updated successfully.",
+                examples=[
+                    OpenApiExample(
+                        name="UpdateSuccess",
+                        value={"message": "Profile updated successfully."}
+                    )
+                ]
+            ),
+            400: OpenApiResponse(
+                response=ErrorResponseSerializer,
+                description="Invalid input or validation error.",
+                examples=[
+                    OpenApiExample(
+                        name="DuplicatePersonnelCode",
+                        value={"personnel_code": ["This personnel code is already in use."]}
+                    ),
+                    OpenApiExample(
+                        name="DuplicateNationalId",
+                        value={"national_id": ["This national ID is already in use."]}
+                    ),
+                    OpenApiExample(
+                        name="InvalidNationalId",
+                        value={"national_id": ["National ID must be exactly 10 digits."]}
+                    ),
+                    OpenApiExample(
+                        name="InvalidPersonnelCode",
+                        value={"personnel_code": ["Personnel code cannot be more than 10 characters."]}
+                    ),
+                    OpenApiExample(
+                        name="InvalidEmail",
+                        value={"email": ["Enter a valid email address."]}
+                    ),
+                    # OpenApiExample(
+                    # name="ValidationError",
+                    # value={"email": ["This email is already in use."]}
+                    # ),
+                    OpenApiExample(
+                        name="InvalidEmail",
+                        value={"email": ["Enter a valid email address."]}
+                    ),
+                    OpenApiExample(
+                        name="MissingCurrentPassword",
+                        value={"current_password": ["Current password is required to change password."]}
+                    ),
+                    OpenApiExample(
+                        name="IncorrectCurrentPassword",
+                        value={"current_password": ["Current password is incorrect."]}
+                    ),
+                ]
+            ),
+            401: OpenApiResponse(
+                response=ErrorResponseSerializer,
+                description="Authentication credentials were not provided or invalid.",
+                examples=[
+                    OpenApiExample(
+                        name="Unauthorized",
+                        value={"detail": "Authentication credentials were not provided."}
+                    )
+                ]
+            ),
+            403: OpenApiResponse(
+                response=ErrorResponseSerializer,
+                description="User is not a Staff.",
+                examples=[
+                    OpenApiExample(
+                        name="NotStaff",
+                        value={"error": "User is not a Staff."}
+                    )
+                ]
+            ),
+            500: OpenApiResponse(
+                response=ErrorResponseSerializer,
+                description="Server error while updating profile.",
+                examples=[
+                    OpenApiExample(
+                        name="ServerError",
+                        value={"error": "An unexpected error occurred while updating profile."}
+                    )
+                ]
+            )
+        },
+        description="Update profile informations of the authenticated Staff."
+    )
     def patch(self, request):
         user = request.user
         try:
@@ -180,7 +242,7 @@ class StaffProfileUpdateView(APIView):
             serializer.save()
             return Response({"message": "Profile updated successfully."}, status=status.HTTP_200_OK)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-        
+    
 
 @extend_schema(tags=['staff'])
 class StaffProfileView(APIView):
@@ -189,15 +251,15 @@ class StaffProfileView(APIView):
     @extend_schema(
         responses={
             200: OpenApiResponse(
-                response=StaffProfileSerializer,
-                description="Staff profile retrieved successfully",
+                response=SuccessResponseSerializer,
+                description="Staff profile retrieved successfully.",
                 examples=[
                     OpenApiExample(
-                        "StaffProfileExample",
+                        name="StaffProfileExample",
                         value={
                             "first_name": "string",
                             "last_name": "string",
-                            "email": "string@example",
+                            "email": "string@example.com",
                             "personnel_code": "string",
                             "national_id": "string"
                         },
@@ -205,19 +267,38 @@ class StaffProfileView(APIView):
                     )
                 ]
             ),
-            403: OpenApiResponse(
+            401: OpenApiResponse(
                 response=ErrorResponseSerializer,
-                description="User is not a Staff",
+                description="Authentication credentials were not provided or invalid.",
                 examples=[
                     OpenApiExample(
-                        "NotStaff",
-                        value={"error": "User is not a Staff."},
-                        response_only=True
+                        name="Unauthorized",
+                        value={"detail": "Authentication credentials were not provided."}
+                    )
+                ]
+            ),
+            403: OpenApiResponse(
+                response=ErrorResponseSerializer,
+                description="User is not a Staff.",
+                examples=[
+                    OpenApiExample(
+                        name="NotStaff",
+                        value={"error": "User is not a staff."}
+                    )
+                ]
+            ),
+            500: OpenApiResponse(
+                response=None,
+                description="Server error while retrieving profile.",
+                examples=[
+                    OpenApiExample(
+                        name="ServerError",
+                        value={"error": "An unexpected error occurred while retrieving profile."}
                     )
                 ]
             )
         },
-        description="Retrieves the authenticated Staff's profile"
+        description="Retrieves the authenticated Staff's profile."
     )
     def get(self, request):
         user = request.user
@@ -228,5 +309,4 @@ class StaffProfileView(APIView):
             return Response({"error": "User is not a staff."}, status=status.HTTP_403_FORBIDDEN)
 
         serializer = StaffProfileSerializer(staff)
-        return Response(serializer.data, status=status.HTTP_200_OK)
-        
+        return Response(serializer.data, status=status.HTTP_200_OK)        

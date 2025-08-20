@@ -45,6 +45,10 @@ class StaffRegisterSerializer(serializers.Serializer):
         for field in required_fields:
             if not data.get(field):
                 raise serializers.ValidationError({field: "This field is required."})
+        if Staff.objects.filter(personnel_code=data['personnel_code']).exists():
+            raise serializers.ValidationError({"personnel_code": ["A staff with this personnel code already exists."]})
+        if Staff.objects.filter(national_id=data['national_id']).exists():
+            raise serializers.ValidationError({"national_id": ["A staff with this national ID already exists."]})
         return data
     
     def create(self, validated_data):
