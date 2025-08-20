@@ -162,6 +162,7 @@ class SpaceListView(APIView):
                         value=[
                             {
                                 "id": 1,
+                                "space_type": "string",
                                 "name": "string",
                                 "address": "string",
                                 "capacity": 50,
@@ -244,7 +245,7 @@ class EventListView(APIView):
                                 "date": "2025-07-27",
                                 "start_time": "02:48:04.892Z",
                                 "end_time": "02:48:04.892Z",
-                                "space": {"id": 1, "name": "string", "address": "string", "capacity": 50},
+                                "space": {"id": 1, "space_type": "string", "name": "string", "address": "string", "capacity": 50},
                                 "poster": "string.jpg",
                                 "organizer": "staff",
                                 "student": None,
@@ -738,6 +739,7 @@ class SpaceDetailView(APIView):
                         name="success",
                         value={
                             "id": 1,
+                            "space_type": "string",
                             "name": "string",
                             "address": "string",
                             "capacity": 50,
@@ -846,6 +848,7 @@ class ManagerSpaceListView(APIView):
                     "Example",
                     value=[{
                         "id": 3,
+                        "space_type": "string",
                         "name": "string",
                         "address": "string",
                         "capacity": 50,
@@ -921,6 +924,7 @@ class ManagerSpaceDetailView(APIView):
                     "Example",
                     value={
                         "id": 1,
+                        "space_type": "string",
                         "name": "string",
                         "address": "string",
                         "capacity": 50,
@@ -991,6 +995,7 @@ class ManagerSpaceCreateView(APIView):
                     "Success",
                     value={
                         "id": 1,
+                        "space_type": "string",
                         "name": "string",
                         "address": "string",
                         "capacity": 50,
@@ -1066,6 +1071,7 @@ class ManagerSpaceUpdateView(APIView):
                     "Success",
                     value={
                         "id": 1,
+                        "space_type": "string",
                         "name": "string",
                         "address": "string",
                         "capacity": 50,

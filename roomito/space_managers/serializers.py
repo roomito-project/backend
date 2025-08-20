@@ -117,16 +117,18 @@ class SpaceListSerializer(serializers.ModelSerializer):
     space_manager = SpaceManagerProfileSerializer(read_only=True)
     first_image_url = serializers.SerializerMethodField()
     
+
     class Meta:
         model = Space
-        fields = ['id', 'name', 'address', 'capacity', 'description', 'space_manager','phone_number', 'first_image_url']
-        read_only_fields = ['id'] 
+        fields = ['id', 'space_type', 'name', 'address', 'capacity', 'description',
+                  'space_manager', 'phone_number', 'first_image_url']
+        read_only_fields = ['id']
 
     def validate_capacity(self, value):
         if value <= 0:
             raise serializers.ValidationError("Capacity must be greater than zero.")
         return value
-    
+
     def get_first_image_url(self, obj):
         img = obj.first_image
         if not img:
@@ -143,7 +145,7 @@ class SpaceSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Space
-        fields = ['id', 'name', 'address', 'capacity', 'description', 'space_manager', 'phone_number', 'features', 'images']
+        fields = ['id', 'space_type', 'name', 'address', 'capacity', 'description', 'space_manager', 'phone_number', 'features', 'images']
         
     def get_phone_number(self, obj):
         return obj.phone_number if obj.phone_number not in ("", None) else None    
@@ -329,7 +331,7 @@ class ManagerSpaceListSerializer(serializers.ModelSerializer):
     class Meta:
         model = Space
         fields = [
-            "id", "name", "address", "capacity", "phone_number",
+            "id", "space_type", "name", "address", "capacity", "phone_number",
             "description", "first_image_url"
         ]
 
@@ -348,7 +350,7 @@ class ManagerSpaceDetailSerializer(serializers.ModelSerializer):
     class Meta:
         model = Space
         fields = [
-            "id", "name", "address", "capacity", "phone_number","description", "features", "images"
+            "id", "space_type", "name", "address", "capacity", "phone_number","description", "features", "images"
         ]
 
 
@@ -368,7 +370,7 @@ class SpaceCreateSerializer(serializers.ModelSerializer):
     class Meta:
         model = Space
         fields = [
-            "id", "name", "address", "capacity", "phone_number",
+            "id", "space_type", "name", "address", "capacity", "phone_number",
             "description", "features", "images"
         ]
 
@@ -415,10 +417,13 @@ class SpaceUpdateSerializer(serializers.ModelSerializer):
     description = serializers.CharField(required=False, allow_blank=True)
     phone_number = serializers.CharField(required=False, allow_blank=True, allow_null=True)
     capacity = serializers.IntegerField(required=False)
+    space_type = serializers.ChoiceField(
+        choices=Space.SPACE_TYPES, required=False
+    )
 
     class Meta:
         model = Space
-        fields = ["name", "address", "capacity", "phone_number", "description"]
+        fields = ["space_type", "name", "address", "capacity", "phone_number", "description"]
 
     def validate(self, attrs):
         for field in ["name", "address", "description"]:

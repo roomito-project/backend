@@ -27,11 +27,18 @@ class SpaceFeature(models.Model):
 
 
 class Space(models.Model):
+    SPACE_TYPES = (
+        ('hall', 'hall'),
+        ('class', 'Class'),
+        ('labratory', 'Labratory'),
+        ('office', 'Office')
+    )
     name = models.CharField(max_length=100)
     address = models.TextField()
     capacity = models.IntegerField(validators=[MinValueValidator(1)])
     phone_number = models.CharField(max_length=11, null=True, blank=True)
     description = models.TextField(default="no description")
+    space_type = models.CharField(choices=SPACE_TYPES,max_length=20)
     space_manager = models.ForeignKey(
         SpaceManager,
         on_delete=models.SET_NULL,
