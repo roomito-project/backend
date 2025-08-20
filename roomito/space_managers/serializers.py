@@ -4,6 +4,7 @@ from .models import Space, SpaceImage, SpaceManager, Event, SpaceFeature, Schedu
 from staffs.models import Staff
 from students.models import Student
 from common.validators import validate_password_strength
+from django.core.validators import MinValueValidator
 
 
 class ErrorResponseSerializer(serializers.Serializer):
@@ -409,35 +410,58 @@ class SpaceCreateSerializer(serializers.ModelSerializer):
             SpaceImage.objects.create(space=space, image=img)
 
         return space
-
+    
 
 class SpaceUpdateSerializer(serializers.ModelSerializer):
-    name = serializers.CharField(required=False, allow_blank=True)
-    address = serializers.CharField(required=False, allow_blank=True)
+    space_type = serializers.ChoiceField(choices=Space.SPACE_TYPES, required=True)
+    name = serializers.CharField(max_length=100, required=True)
+    address = serializers.CharField(required=True)
+    capacity = serializers.IntegerField(validators=[MinValueValidator(1)], required=True)
+    phone_number = serializers.CharField(max_length=11, required=False, allow_null=True, allow_blank=True)
     description = serializers.CharField(required=False, allow_blank=True)
-    phone_number = serializers.CharField(required=False, allow_blank=True, allow_null=True)
-    capacity = serializers.IntegerField(required=False)
-    space_type = serializers.ChoiceField(
-        choices=Space.SPACE_TYPES, required=False
+    features = serializers.PrimaryKeyRelatedField(
+        queryset=SpaceFeature.objects.all(),
+        many=True,
+        required=True  
+    )
+    images = serializers.ListField(
+        child=serializers.ImageField(),
+        required=True  
     )
 
     class Meta:
         model = Space
-        fields = ["space_type", "name", "address", "capacity", "phone_number", "description"]
+        fields = ["space_type", "name", "address", "capacity", "phone_number", "description", "features", "images"]
 
     def validate(self, attrs):
-        for field in ["name", "address", "description"]:
-            if field in attrs and (attrs[field] is None or attrs[field] == ""):
-                attrs.pop(field)
-
-        if "phone_number" in attrs and attrs["phone_number"] in ["", None]:
-            attrs["phone_number"] = None
-
         return attrs
+    
+    def to_internal_value(self, data):
+        mutable = data.copy()
+        features = mutable.get("features")
+        if features:
+            if isinstance(features, str):
+                try:
+                    mutable.setlist("features", [int(f.strip()) for f in features.split(",")])
+                except ValueError:
+                    pass
+        return super().to_internal_value(mutable)
 
     def update(self, instance, validated_data):
-        for field in ["name", "address", "description", "phone_number", "capacity"]:
-            if field in validated_data:
-                setattr(instance, field, validated_data[field])
+        instance.space_type = validated_data.get("space_type", instance.space_type)
+        instance.name = validated_data.get("name", instance.name)
+        instance.address = validated_data.get("address", instance.address)
+        instance.capacity = validated_data.get("capacity", instance.capacity)
+        instance.phone_number = validated_data.get("phone_number", instance.phone_number)
+        instance.description = validated_data.get("description", instance.description)
+
+        features = validated_data.get("features", [])
+        instance.features.set(features)
+
+        images = validated_data.get("images", [])
+        instance.images.all().delete() 
+        for img in images:
+            SpaceImage.objects.create(space=instance, image=img)
+
         instance.save()
         return instance

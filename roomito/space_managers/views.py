@@ -8,6 +8,7 @@ from .models import Reservation, Space, Event, SpaceFeature, ReservationNotifica
 from django.shortcuts import get_object_or_404
 from django.core.mail import send_mail
 from rest_framework.parsers import MultiPartParser, FormParser
+from drf_spectacular.types import OpenApiTypes
 from .serializers import (
     ErrorResponseSerializer,
     ManagerSpaceDetailSerializer,
@@ -152,6 +153,15 @@ class SpaceListView(APIView):
     permission_classes = [IsAuthenticated]
 
     @extend_schema(
+        parameters=[
+            OpenApiParameter(
+                name='space_type',
+                type=OpenApiTypes.STR,
+                location=OpenApiParameter.QUERY,
+                description='Filter spaces by type (hall, class, labratory and office)',
+                required=False,
+            ),
+        ],
         responses={
             200: OpenApiResponse(
                 response=SpaceListSerializer(many=True),
@@ -215,12 +225,16 @@ class SpaceListView(APIView):
     )
     
     def get(self, request):
-        qs = (
-            Space.objects
-            .select_related("space_manager", "space_manager__user")
-            .prefetch_related("images")
-            .order_by("id")
-        )
+        space_type = request.query_params.get('space_type', None)
+
+        qs = Space.objects.select_related("space_manager", "space_manager__user").prefetch_related("images").order_by("id")
+
+        if space_type:
+            qs = qs.filter(space_type=space_type)
+
+        if not qs.exists():
+            return Response({"error": "No spaces available."}, status=status.HTTP_404_NOT_FOUND)
+
         data = SpaceListSerializer(qs, many=True, context={'request': request}).data
         return Response(data, status=status.HTTP_200_OK)
 
@@ -839,7 +853,15 @@ class ManagerSpaceListView(APIView):
     permission_classes = [IsSpaceManagerUser]
 
     @extend_schema(
-        description="List spaces managed by the authenticated space manager.",
+        parameters=[
+        OpenApiParameter(
+            name='space_type',
+            type=OpenApiTypes.STR,
+            location=OpenApiParameter.QUERY,
+            description='Filter spaces by type (hall, class, labratory and office)',
+            required=False,
+        ),
+    ],
         responses={
             200: OpenApiResponse(
                 response=ManagerSpaceListSerializer(many=True),
@@ -892,21 +914,23 @@ class ManagerSpaceListView(APIView):
                 value={"error": "An unexpected error occurred."}
             )]
         )
-    }
+    },
+        description="List spaces managed by the authenticated space manager.",
 )
     def get(self, request):
         try:
-            manager = request.user.spacemanager  
+            manager = request.user.spacemanager
         except Exception:
             return Response({"error": "You are not a space manager."}, status=status.HTTP_403_FORBIDDEN)
 
-        qs = (
-            Space.objects
-            .filter(space_manager=manager)
-            .prefetch_related("images")
-            .order_by("id")
-        )
-        data = ManagerSpaceListSerializer(qs, many=True).data
+        space_type = request.query_params.get('space_type', None)
+
+        queryset = Space.objects.filter(space_manager=manager).prefetch_related("images").order_by("id")
+        
+        if space_type:
+            queryset = queryset.filter(space_type=space_type) 
+
+        data = ManagerSpaceListSerializer(queryset, many=True).data
         return Response(data, status=status.HTTP_200_OK)
 
 
@@ -1134,66 +1158,25 @@ class ManagerSpaceUpdateView(APIView):
             ),
         }
     )
-    def patch(self, request, space_id: int):
-        space = get_object_or_404(Space, id=space_id, space_manager__user=request.user)
-
-        data = request.data.copy()
-
-        for key in ["name", "address", "description"]:
-            if key in data and data.get(key) == "":
-                data.pop(key)
-
-        if "phone_number" in data and data.get("phone_number") == "":
-            data["phone_number"] = None
-
-        if "capacity" in data and data.get("capacity") in ("", None):
-            data.pop("capacity")
-
-        if hasattr(request.data, "getlist"):
-            raw_features = request.data.getlist("features")
-        else:
-            raw_features = data.get("features", [])
-
-        if isinstance(raw_features, str):
-            raw_features = [x.strip() for x in raw_features.split(",") if x.strip()]
-
-        cleaned_feature_ids = []
-        for f in raw_features or []:
-            if f not in ("", None):
-                try:
-                    cleaned_feature_ids.append(int(f))
-                except (TypeError, ValueError):
-                    pass
-
-        data.pop("features", None)
-
-        new_images = request.FILES.getlist("images") if hasattr(request.FILES, "getlist") else []
-        data.pop("images", None)
-
-        serializer = SpaceUpdateSerializer(
-            instance=space,
-            data=data,
-            partial=True,
-            context={"request": request},
-        )
-        if not serializer.is_valid():
-            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
-        space = serializer.save()
-
-        if cleaned_feature_ids:
-            qs = SpaceFeature.objects.filter(id__in=cleaned_feature_ids)
-            valid_ids = {obj.id for obj in qs}
-            missing = [fid for fid in set(cleaned_feature_ids) if fid not in valid_ids]
-            if missing:
+    def put(self, request, space_id):
+        try:
+            space = Space.objects.get(id=space_id)
+            if not request.user == space.space_manager.user:
                 return Response(
-                    {"features": [f"Invalid feature id(s): {missing}"]},
-                    status=status.HTTP_400_BAD_REQUEST,
+                    {"error": "You are not authorized to update this space."},
+                    status=status.HTTP_403_FORBIDDEN
                 )
-            space.features.add(*qs)
 
-        for img in new_images:
-            if img:
-                SpaceImage.objects.create(space=space, image=img)
+            serializer = SpaceUpdateSerializer(instance=space, data=request.data)
+            if not serializer.is_valid():
+                return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-        return Response(SpaceSerializer(space, context={"request": request}).data, status=status.HTTP_200_OK)
+            updated_space = serializer.save()
+
+            return Response(SpaceSerializer(updated_space).data, status=status.HTTP_200_OK)
+
+        except Space.DoesNotExist:
+            return Response({"error": "Space not found."}, status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            print(f"Unexpected error: {str(e)}")
+            return Response({"error": "An unexpected error occurred."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
