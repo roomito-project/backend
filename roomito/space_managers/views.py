@@ -632,10 +632,14 @@ class ReservationCreateView(APIView):
                             "phone_number": "09123456789",
                             "description": "string",
                             "schedule": {
-                                "start_time": "09:00:00",
-                                "end_time": "11:00:00",
+                                "start_hour_code": 1,
+                                "end_hour_code": 2,
                                 "date": "2025-08-15"
-                            }
+                            },
+                            "hosting_association": "string",
+                            "hosting_organizations": "string",
+                            "responsible_organizer": "string",
+                            "position": "professor"
                         }
                     )
                 ]
@@ -646,11 +650,11 @@ class ReservationCreateView(APIView):
                 examples=[
                     OpenApiExample(
                         name="SameTime",
-                        value={"schedule": ["Start and end time cannot be the same."]}
+                        value={"schedule": ["Start and end hour codes cannot be the same."]}
                     ),
                     OpenApiExample(
                         name="BadRequest",
-                        value={"schedule": ["Start time must be before end time."]}
+                        value={"schedule": ["End hour code must be after start hour code."]}
                     ),
                     OpenApiExample(
                         name="ValidationError",
@@ -738,10 +742,20 @@ class ReservationCreateView(APIView):
         try:
             reservation = serializer.save()
 
+            existing_schedules = Schedule.objects.filter(
+                space=space,
+                date=reservation.schedule.date
+            ).exclude(pk=reservation.schedule.pk)
+            for schedule in existing_schedules:
+                if (reservation.schedule.start_hour_code.code <= schedule.end_hour_code.code and
+                    reservation.schedule.end_hour_code.code >= schedule.start_hour_code.code):
+                    reservation.delete() 
+                    return Response({"error": "This time conflicts with another schedule on the same date."}, status=status.HTTP_409_CONFLICT)
+
             if space.space_manager and space.space_manager.email:
                 send_mail(
                     subject='درخواست رزرو جدید',
-                    message=f'درخواستی جدید برای رزرو {space.name} در تاریخ {reservation.schedule.date} از ساعت {reservation.schedule.start_time} تا {reservation.schedule.end_time} ثبت شده است. لطفاً آن را بررسی کنید.',
+                    message=f'درخواستی جدید برای رزرو {space.name} در تاریخ {reservation.schedule.date} از ساعت {reservation.schedule.start_hour_code.time_range} تا {reservation.schedule.end_hour_code.time_range} ثبت شده است. لطفاً آن را بررسی کنید.',
                     from_email="mahyajfri37@gmail.com",
                     recipient_list=[space.space_manager.email],
                     fail_silently=True,
@@ -753,7 +767,7 @@ class ReservationCreateView(APIView):
             return Response({"error": str(e)}, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
         except Exception as e:
             return Response({"error": "An unexpected error occurred."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-        
+               
 
 @extend_schema(tags=['space_manager'])
 class ManagerReservationListView(APIView):

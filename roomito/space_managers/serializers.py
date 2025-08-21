@@ -1,6 +1,6 @@
 from rest_framework import serializers
 from django.contrib.auth.models import User
-from .models import Space, SpaceImage, SpaceManager, Event, SpaceFeature, Schedule, Reservation
+from .models import HourSlot, Space, SpaceImage, SpaceManager, Event, SpaceFeature, Schedule, Reservation
 from staffs.models import Staff
 from students.models import Student
 from common.validators import validate_password_strength
@@ -244,6 +244,15 @@ class ScheduleAvailabilitySerializer(serializers.Serializer):
     is_locked = serializers.BooleanField(read_only=True)
 
 
+class ScheduleSerializer(serializers.ModelSerializer):
+    start_hour_code = serializers.PrimaryKeyRelatedField(queryset=HourSlot.objects.all())
+    end_hour_code = serializers.PrimaryKeyRelatedField(queryset=HourSlot.objects.all())
+
+    class Meta:
+        model = Schedule
+        fields = ['start_hour_code', 'end_hour_code', 'date']
+
+
 class ReservationCreateSerializer(serializers.ModelSerializer):
     phone_number = serializers.CharField(
         required=False,
@@ -255,14 +264,19 @@ class ReservationCreateSerializer(serializers.ModelSerializer):
             'min_length': 'Phone number must be exactly 11 digits.'
         }
     )
-     
     schedule = ScheduleSerializer()
+    hosting_association = serializers.CharField(required=False, allow_blank=True, max_length=100)
+    hosting_organizations = serializers.CharField(required=False, allow_blank=True, max_length=200)
+    responsible_organizer = serializers.CharField(required=False, allow_blank=True, max_length=100)
+    position = serializers.CharField(required=False, allow_blank=True, max_length=100)
 
     class Meta:
         model = Reservation
         fields = [
             'id', 'space', 'reservation_type', 'reservee_type',
-            'student', 'staff', 'phone_number', 'description', 'status', 'schedule'
+            'student', 'staff', 'phone_number', 'description', 'status',
+            'schedule', 'hosting_association', 'hosting_organizations',
+            'responsible_organizer', 'position'
         ]
         read_only_fields = ['id', 'status', 'space', 'reservee_type', 'student', 'staff']
 
@@ -283,15 +297,15 @@ class ReservationCreateSerializer(serializers.ModelSerializer):
         if data.get('phone_number'):
             if not data['phone_number'].isdigit() or len(data['phone_number']) != 11:
                 raise serializers.ValidationError({"phone_number": "Phone number must be exactly 11 digits."})
-            
-        schedule_data = data['schedule']
-        start = schedule_data['start_time']
-        end   = schedule_data['end_time']
 
-        if start == end:
-            raise serializers.ValidationError({"schedule": "Start and end time cannot be the same."})
-        if start > end:
-            raise serializers.ValidationError({"schedule": "Start time must be before end time."})
+        schedule_data = data['schedule']
+        start_code = schedule_data['start_hour_code'].code
+        end_code = schedule_data['end_hour_code'].code
+
+        if start_code == end_code:
+            raise serializers.ValidationError({"schedule": "Start and end hour codes cannot be the same."})
+        if end_code < start_code:
+            raise serializers.ValidationError({"schedule": "End hour code must be after start hour code."})
 
         return data
 
@@ -301,8 +315,8 @@ class ReservationCreateSerializer(serializers.ModelSerializer):
         schedule = Schedule.objects.create(space=space, **schedule_data)
         reservation = Reservation.objects.create(space=space, schedule=schedule, **validated_data)
         return reservation
-  
-
+    
+    
 class ReservationListSerializer(serializers.ModelSerializer):
     space_name = serializers.CharField(source='space.name')
     date = serializers.DateField(source='schedule.date')
