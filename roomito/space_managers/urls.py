@@ -13,7 +13,8 @@ from .views import (
     ManagerSpaceDetailView,
     ManagerSpaceListView,
     ManagerSpaceCreateView,
-    ManagerSpaceUpdateView
+    ManagerSpaceUpdateView,
+    ScheduleAvailabilityView
 )
 
 urlpatterns = [
@@ -31,4 +32,5 @@ urlpatterns = [
     path("spacemanager/<int:space_id>/", ManagerSpaceDetailView.as_view(), name="manager-space-detail"),
     path('spacemanager/createSpace/', ManagerSpaceCreateView.as_view(), name="create-space"),
     path('spacemanager/<int:space_id>/updateSpace/', ManagerSpaceUpdateView.as_view(), name="update-space"),
-]
+    path('schedules/availability/', ScheduleAvailabilityView.as_view(), name='schedule-availability'),
+    ]

@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import SpaceManager, Space, Reservation, Schedule, Event, SpaceFeature, SpaceImage
+from .models import SpaceManager, Space, Reservation, Schedule, Event, SpaceFeature, SpaceImage, HourSlot
 from django.contrib.auth.models import User
 from django.utils.crypto import get_random_string
 from django.core.mail import send_mail
@@ -13,6 +13,11 @@ admin.site.register(Reservation)
 admin.site.register(Schedule)
 admin.site.register(Event)
 admin.site.register(SpaceFeature)
+
+@admin.register(HourSlot)
+class HourSlotAdmin(admin.ModelAdmin):
+    list_display = ('code', 'time_range')  
+    search_fields = ('code', 'time_range')  
 
 class SpaceImageInline(admin.TabularInline):
     model = SpaceImage

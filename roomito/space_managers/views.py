@@ -4,15 +4,17 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework import status
 from drf_spectacular.utils import extend_schema, OpenApiResponse, OpenApiExample, OpenApiParameter
-from .models import Reservation, Space, Event, SpaceFeature, ReservationNotification, SpaceImage, SpaceManager
+from .models import HourSlot, Reservation, Schedule, Space, Event, SpaceFeature, ReservationNotification, SpaceImage, SpaceManager
 from django.shortcuts import get_object_or_404
 from django.core.mail import send_mail
 from rest_framework.parsers import MultiPartParser, FormParser
 from drf_spectacular.types import OpenApiTypes
+from django.utils import timezone
 from .serializers import (
     ErrorResponseSerializer,
     ManagerSpaceDetailSerializer,
     ManagerSpaceListSerializer,
+    ScheduleAvailabilitySerializer,
     SpaceSerializer,
     SpaceUpdateFeatureSerializer,
     SpaceUpdateSerializer,
@@ -1392,3 +1394,124 @@ class ManagerSpaceUpdateView(APIView):
         except Exception as e:
             print(f"Unexpected error: {str(e)}")
             return Response({"error": "An unexpected error occurred."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        
+
+@extend_schema(tags=['reservation'])
+class ScheduleAvailabilityView(APIView):
+    permission_classes = [IsAuthenticated]  
+
+    @extend_schema(
+        parameters=[
+            OpenApiParameter(
+                name='date',
+                type=OpenApiTypes.DATE,
+                location=OpenApiParameter.QUERY,
+                description='The date to check available hours (YYYY-MM-DD)',
+                required=True,
+            ),
+            OpenApiParameter(
+                name='space_id',
+                type=OpenApiTypes.INT,
+                location=OpenApiParameter.QUERY,
+                description='The ID of the space to check availability for',
+                required=True,
+            ),
+        ],
+        responses={
+            200: OpenApiResponse(
+                response=ScheduleAvailabilitySerializer(many=True),
+                description="List of available hours for the specified date and space.",
+                examples=[
+                    OpenApiExample(
+                        name="Success",
+                        value=[
+                            {"hour_code": 1, "time_range": "7:00-8:00", "is_locked": False},
+                            {"hour_code": 2, "time_range": "8:00-9:00", "is_locked": True},
+                        ]
+                    )
+                ]
+            ),
+            400: OpenApiResponse(
+                response=ErrorResponseSerializer,
+                description="Invalid date or space ID format.",
+                examples=[
+                    OpenApiExample(
+                        name="BadRequest",
+                        value={"error": "Date must be in YYYY-MM-DD format."}
+                    ),
+                    OpenApiExample(
+                        name="InvalidSpaceId",
+                        value={"error": "Invalid space ID."}
+                    )
+                ]
+            ),
+            401: OpenApiResponse(
+                response=ErrorResponseSerializer,
+                description="Authentication credentials were not provided.",
+                examples=[
+                    OpenApiExample(
+                        name="Unauthorized",
+                        value={"error": "Authentication credentials were not provided."}
+                    )
+                ]
+            ),
+            404: OpenApiResponse(
+                response=ErrorResponseSerializer,
+                description="Space not found.",
+                examples=[
+                    OpenApiExample(
+                        name="NotFound",
+                        value={"error": "Space with ID 10 not found."}
+                    )
+                ]
+            ),
+            500: OpenApiResponse(
+                response=ErrorResponseSerializer,
+                description="Unexpected server error.",
+                examples=[
+                    OpenApiExample(
+                        name="ServerError",
+                        value={"error": "An unexpected error occurred."}
+                    )
+                ]
+            )
+        },
+        description="Retrieve the list of available hours for a specific date and space."
+    )
+    def get(self, request):
+        date_str = request.query_params.get('date')
+        space_id = request.query_params.get('space_id')
+
+        if not date_str or not space_id:
+            return Response({"error": "Date and space ID are required."}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            date = timezone.datetime.strptime(date_str, '%Y-%m-%d').date()
+            space_id = int(space_id)
+            if space_id <= 0:
+                return Response({"error": "Invalid space ID."}, status=status.HTTP_400_BAD_REQUEST)
+        except (ValueError, TypeError):
+            return Response({"error": "Date must be in YYYY-MM-DD format."}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            space = get_object_or_404(Space, id=space_id)
+        except Exception:
+            return Response({"error": f"Space with ID {space_id} not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        reserved_schedules = Schedule.objects.filter(space=space, date=date).values_list('start_hour_code__code', 'end_hour_code__code')
+
+        hours = []
+        hour_slots = HourSlot.objects.all()  
+        for slot in hour_slots:
+            is_locked = any(
+                schedule[0] <= slot.code <= schedule[1]
+                for schedule in reserved_schedules
+            )
+            hours.append({
+                "hour_code": slot.code,
+                "time_range": slot.time_range,
+                "is_locked": is_locked
+            })
+
+        serializer = ScheduleAvailabilitySerializer(hours, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)

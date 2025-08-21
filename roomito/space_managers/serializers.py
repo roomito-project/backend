@@ -69,11 +69,11 @@ class SpaceManagerProfileUpdateSerializer(serializers.Serializer):
             raise serializers.ValidationError("This username is already in use.")
         return value
     
-    def validate_email(self, value):
-        user = self.context['request'].user
-        if User.objects.exclude(pk=user.pk).filter(email=value).exists():
-            raise serializers.ValidationError("This email is already in use.")
-        return value
+    # def validate_email(self, value):
+    #     user = self.context['request'].user
+    #     if User.objects.exclude(pk=user.pk).filter(email=value).exists():
+    #         raise serializers.ValidationError("This email is already in use.")
+    #     return value
     
     def validate(self, attrs):
         if 'new_password' in attrs:
@@ -236,6 +236,12 @@ class ScheduleSerializer(serializers.ModelSerializer):
     class Meta:
         model = Schedule
         fields = ['start_time', 'end_time', 'date']
+
+
+class ScheduleAvailabilitySerializer(serializers.Serializer):
+    hour_code = serializers.IntegerField(read_only=True)
+    time_range = serializers.CharField(read_only=True)
+    is_locked = serializers.BooleanField(read_only=True)
 
 
 class ReservationCreateSerializer(serializers.ModelSerializer):

@@ -66,29 +66,57 @@ class SpaceImage(models.Model):
         return f"{self.space.name} - image #{self.id}"
 
 
+class HourSlot(models.Model):
+    code = models.PositiveSmallIntegerField(primary_key=True, unique=True)
+    time_range = models.CharField(max_length=11, unique=True)  
+
+    def __str__(self):
+        return self.time_range
+
+    class Meta:
+        ordering = ['code']
+
+
 class Schedule(models.Model):
-    start_time = models.TimeField()
-    end_time = models.TimeField()
+    start_hour_code = models.ForeignKey(HourSlot, on_delete=models.PROTECT, related_name='start_schedules')
+    end_hour_code = models.ForeignKey(HourSlot, on_delete=models.PROTECT, related_name='end_schedules')
     date = models.DateField(default=timezone.now)
     space = models.ForeignKey(Space, on_delete=models.CASCADE)
 
     def __str__(self):
-        return f"{self.space.name} - {self.date} - {self.start_time} till {self.end_time}"
+        return f"{self.space.name} - {self.date} - {self.start_hour_code} till {self.end_hour_code}"
 
     def clean(self):
-        if self.end_time == self.start_time:
-            raise ValidationError("Start and end time cannot be the same.")
-        if self.end_time < self.start_time:
-            raise ValidationError("End time must be after start time.")
+        if self.start_hour_code.code == self.end_hour_code.code:
+            raise ValidationError("Start and end hour codes cannot be the same.")
+        if self.end_hour_code.code < self.start_hour_code.code:
+            raise ValidationError("End hour code must be after start hour code.")
 
-        existing = Schedule.objects.filter(space=self.space, date=self.date).exclude(pk=self.pk)
-        if existing.filter(start_time__lt=self.end_time, end_time__gt=self.start_time).exists():
-            raise ValidationError("This time conflicts with another schedule on the same date.")
-        
+        existing = Schedule.objects.filter(
+            space=self.space,
+            date=self.date
+        ).exclude(pk=self.pk)
+        for schedule in existing:
+            if (self.start_hour_code.code <= schedule.end_hour_code.code and
+                self.end_hour_code.code >= schedule.start_hour_code.code):
+                raise ValidationError("This time conflicts with another schedule on the same date.")
+
+    @property
+    def is_locked(self):
+        existing = Schedule.objects.filter(
+            space=self.space,
+            date=self.date
+        ).exclude(pk=self.pk)
+        for schedule in existing:
+            if (self.start_hour_code.code <= schedule.end_hour_code.code and
+                self.end_hour_code.code >= schedule.start_hour_code.code):
+                return True
+        return False
+
     def save(self, *args, **kwargs):
         self.clean()
         super().save(*args, **kwargs)
-
+        
 
 class Reservation(models.Model):
     RESERVATION_TYPES = (
@@ -117,6 +145,10 @@ class Reservation(models.Model):
     status = models.CharField(max_length=20, choices=STATUSES, default='under_review')
     space = models.ForeignKey(Space, on_delete=models.SET_NULL, null=True, blank=True)
     schedule = models.OneToOneField(Schedule, on_delete=models.CASCADE, null=True, blank=True, related_name='reservation_instance')
+    hosting_association = models.CharField(max_length=100, null=True, blank=True)
+    hosting_organizations = models.CharField(max_length=200, null=True, blank=True)
+    responsible_organizer = models.CharField(max_length=100, null=True, blank=True)
+    position = models.CharField(max_length=100, null=True, blank=True)
 
     def __str__(self):
         reservee_name = self.student.first_name if self.student else self.staff.first_name if self.staff else "unknown"
