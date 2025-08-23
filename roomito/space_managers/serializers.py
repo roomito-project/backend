@@ -230,14 +230,6 @@ class EventDetailSerializer(serializers.ModelSerializer):
         return None
 
 
-class ScheduleSerializer(serializers.ModelSerializer):
-    start_time = serializers.TimeField(format='%H:%M:%S', input_formats=['%H:%M:%S'])
-    end_time   = serializers.TimeField(format='%H:%M:%S', input_formats=['%H:%M:%S'])
-    class Meta:
-        model = Schedule
-        fields = ['start_time', 'end_time', 'date']
-
-
 class ScheduleAvailabilitySerializer(serializers.Serializer):
     hour_code = serializers.IntegerField(read_only=True)
     time_range = serializers.CharField(read_only=True)
@@ -245,12 +237,54 @@ class ScheduleAvailabilitySerializer(serializers.Serializer):
 
 
 class ScheduleSerializer(serializers.ModelSerializer):
-    start_hour_code = serializers.PrimaryKeyRelatedField(queryset=HourSlot.objects.all())
-    end_hour_code = serializers.PrimaryKeyRelatedField(queryset=HourSlot.objects.all())
+    hour_codes = serializers.ListField(
+        child=serializers.PrimaryKeyRelatedField(queryset=HourSlot.objects.all()),
+        min_length=1,
+        max_length=12,
+        error_messages={
+            'min_length': 'At least one hour code is required.',
+            'max_length': 'Maximum 12 hour codes allowed.'
+        }
+    )
 
     class Meta:
         model = Schedule
-        fields = ['start_hour_code', 'end_hour_code', 'date']
+        fields = ['hour_codes', 'date']
+
+    def validate(self, data):
+        slots = [hc.code for hc in data['hour_codes']]
+        if len(slots) != len(set(slots)):
+            raise serializers.ValidationError({"hour_codes": ["Duplicate hour codes are not allowed."]})
+        if slots != sorted(slots):
+            raise serializers.ValidationError({"hour_codes": ["Hour codes must be in ascending order."]})
+        if max(slots) - min(slots) + 1 != len(slots):
+            raise serializers.ValidationError({"hour_codes": ["Hour codes must be consecutive."]})
+        return data
+
+    def to_representation(self, instance):
+        start = instance.start_hour_code.code
+        end = instance.end_hour_code.code
+        return {
+            "hour_codes": list(range(start, end + 1)),
+            "date": instance.date
+        }
+
+    def create(self, validated_data):
+        hour_codes = validated_data.pop('hour_codes')
+        space = self.context.get('space')
+        if not space:
+            raise serializers.ValidationError({"space": ["Space context is missing."]})
+
+        start_hour_code = min(hour_codes, key=lambda x: x.code)
+        end_hour_code   = max(hour_codes, key=lambda x: x.code)
+
+        schedule = Schedule.objects.create(
+            space=space,
+            start_hour_code=start_hour_code,
+            end_hour_code=end_hour_code,
+            date=validated_data['date']
+        )
+        return schedule
 
 
 class ReservationCreateSerializer(serializers.ModelSerializer):
@@ -260,8 +294,8 @@ class ReservationCreateSerializer(serializers.ModelSerializer):
         max_length=11,
         min_length=11,
         error_messages={
-            'max_length': 'Phone number must be exactly 11 digits.',
-            'min_length': 'Phone number must be exactly 11 digits.'
+            'max_length': ['Phone number must be exactly 11 digits.'],
+            'min_length': ['Phone number must be exactly 11 digits.']
         }
     )
     schedule = ScheduleSerializer()
@@ -292,59 +326,88 @@ class ReservationCreateSerializer(serializers.ModelSerializer):
             data['staff'] = user.staff
             data['student'] = None
         else:
-            raise serializers.ValidationError("You must be a student or staff to create a reservation.")
+            raise serializers.ValidationError({"reservee_type": ["You must be a student or staff to create a reservation."]})
 
         if data.get('phone_number'):
             if not data['phone_number'].isdigit() or len(data['phone_number']) != 11:
-                raise serializers.ValidationError({"phone_number": "Phone number must be exactly 11 digits."})
-
-        schedule_data = data['schedule']
-        start_code = schedule_data['start_hour_code'].code
-        end_code = schedule_data['end_hour_code'].code
-
-        if start_code == end_code:
-            raise serializers.ValidationError({"schedule": "Start and end hour codes cannot be the same."})
-        if end_code < start_code:
-            raise serializers.ValidationError({"schedule": "End hour code must be after start hour code."})
+                raise serializers.ValidationError({"phone_number": ["Phone number must be exactly 11 digits."]})
 
         return data
 
     def create(self, validated_data):
-        schedule_data = validated_data.pop('schedule')
-        space = self.context['space']
-        schedule = Schedule.objects.create(space=space, **schedule_data)
-        reservation = Reservation.objects.create(space=space, schedule=schedule, **validated_data)
+        schedule_data = validated_data.pop('schedule') 
+        space = self.context.get('space')
+        if not space:
+            raise serializers.ValidationError({"space": ["Space context is missing."]})
+
+        schedule = ScheduleSerializer(context={'space': space}).create(schedule_data)
+
+        reservation = Reservation.objects.create(
+            space=space,
+            schedule=schedule,
+            **validated_data
+        )
         return reservation
-    
-    
+        
 class ReservationListSerializer(serializers.ModelSerializer):
-    space_name = serializers.CharField(source='space.name')
-    date = serializers.DateField(source='schedule.date')
-    start_time = serializers.TimeField(source='schedule.start_time')
-    end_time = serializers.TimeField(source='schedule.end_time')
-    status_display = serializers.CharField(source='get_status_display') 
+    space_name = serializers.CharField(source='space.name', read_only=True)
+    date = serializers.DateField(source='schedule.date', read_only=True)
+    start_time = serializers.SerializerMethodField()
+    end_time = serializers.SerializerMethodField()
+
+    status_display = serializers.CharField(source='get_status_display', read_only=True)
     reservee_name = serializers.SerializerMethodField()
-    phone_number = serializers.CharField() 
     reservee_type = serializers.SerializerMethodField()
+    phone_number = serializers.CharField(read_only=True)
 
     class Meta:
         model = Reservation
-        fields = ['id', 'space_name', 'date', 'start_time', 'end_time', 'status_display', 'reservation_type', 'description', 'reservee_name', 'reservee_type', 'phone_number']
+        fields = [
+            'id',
+            'space_name',
+            'date',
+            'start_time',
+            'end_time',
+            'status_display',
+            'reservation_type',
+            'description',
+            'reservee_name',
+            'reservee_type',
+            'phone_number',
+        ]
+
+    def _parse_time_range(self, time_range_str, pick='start'):
+        if not time_range_str or '-' not in time_range_str:
+            return None
+        parts = time_range_str.split('-')
+        val = parts[0] if pick == 'start' else parts[-1]
+        if len(val) == 5:  
+            return f"{val}:00"
+        return val  
+
+    def get_start_time(self, obj):
+        slot = getattr(getattr(obj, 'schedule', None), 'start_hour_code', None)
+        return self._parse_time_range(getattr(slot, 'time_range', None), pick='start')
+
+    def get_end_time(self, obj):
+        slot = getattr(getattr(obj, 'schedule', None), 'end_hour_code', None)
+        return self._parse_time_range(getattr(slot, 'time_range', None), pick='end')
 
     def get_reservee_name(self, obj):
-        if obj.student and obj.student.user:
-            return f"{obj.student.user.first_name} {obj.student.user.last_name}"
-        elif obj.staff:
-            return f"{obj.staff.first_name} {obj.staff.last_name}"
-        return "unknown"   
-    
+        if obj.student and getattr(obj.student, 'user', None):
+            return f"{obj.student.user.first_name} {obj.student.user.last_name}".strip() or "unknown"
+        if obj.staff:
+            full = f"{obj.staff.first_name} {obj.staff.last_name}".strip()
+            return full or "unknown"
+        return "unknown"
+
     def get_reservee_type(self, obj):
         if obj.student:
             return "student"
-        elif obj.staff:
+        if obj.staff:
             return "staff"
-        return "unknown" 
-    
+        return "unknown"
+      
     
 class ManagerSpaceListSerializer(serializers.ModelSerializer):
     first_image_url = serializers.SerializerMethodField()

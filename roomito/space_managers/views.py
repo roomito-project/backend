@@ -6,6 +6,7 @@ from rest_framework import status
 from drf_spectacular.utils import extend_schema, OpenApiResponse, OpenApiExample, OpenApiParameter
 from .models import HourSlot, Reservation, Schedule, Space, Event, SpaceFeature, ReservationNotification, SpaceImage, SpaceManager
 from django.shortcuts import get_object_or_404
+from django.core.exceptions import ValidationError as DjangoValidationError
 from django.core.mail import send_mail
 from rest_framework.parsers import MultiPartParser, FormParser
 from drf_spectacular.types import OpenApiTypes
@@ -610,60 +611,49 @@ class SpaceUpdateFeatureView(APIView):
         invalid_features = [fid for fid in feature_ids if not SpaceFeature.objects.filter(id=fid).exists()]
         if invalid_features:
             return Response
-                            
-
+                        
+                        
 @extend_schema(tags=['reservation'])
 class ReservationCreateView(APIView):
     permission_classes = [IsAuthenticated]
 
     @extend_schema(
-        description="Create a reservation request for a specific space by authenticated user (student or staff).",
+        description="Create a reservation request for a specific space by authenticated user (student or staff) with a list of consecutive hour codes.",
         request=ReservationCreateSerializer,
         responses={
             201: OpenApiResponse(
                 response=ReservationCreateSerializer,
-                description="Reservation request created successfully and sent to space manager for review.",
-                examples=[
-                    OpenApiExample(
-                        name="Success",
-                        value={
-                            "reservation_type": "class",
-                            "reservee_type": "student",
-                            "phone_number": "09123456789",
-                            "description": "string",
-                            "schedule": {
-                                "start_hour_code": 1,
-                                "end_hour_code": 2,
-                                "date": "2025-08-15"
-                            },
-                            "hosting_association": "string",
-                            "hosting_organizations": "string",
-                            "responsible_organizer": "string",
-                            "position": "professor"
-                        }
-                    )
-                ]
+                description="Reservation request created successfully and sent to space manager for review."
             ),
+
             400: OpenApiResponse(
                 response=ErrorResponseSerializer,
-                description="Invalid data provided (e.g., invalid time range or missing required fields).",
+                description="Invalid data provided (serializer-level validation).",
                 examples=[
                     OpenApiExample(
-                        name="SameTime",
-                        value={"schedule": ["Start and end hour codes cannot be the same."]}
+                        name="DuplicateHours",
+                        value={"schedule": {"hour_codes": ["Duplicate hour codes are not allowed."]}}
                     ),
                     OpenApiExample(
-                        name="BadRequest",
-                        value={"schedule": ["End hour code must be after start hour code."]}
+                        name="NonAscending",
+                        value={"schedule": {"hour_codes": ["Hour codes must be in ascending order."]}}
                     ),
                     OpenApiExample(
-                        name="ValidationError",
-                        value={"reservee_type": ["You must be a student or staff to create a reservation."]}
+                        name="NonConsecutive",
+                        value={"schedule": {"hour_codes": ["Hour codes must be consecutive."]}}
                     ),
                     OpenApiExample(
                         name="InvalidPhoneNumber",
                         value={"phone_number": ["Phone number must be exactly 11 digits."]}
-                    )
+                    ),
+                    OpenApiExample(
+                        name="MissingField",
+                        value={"reservation_type": ["This field is required."]}
+                    ),
+                    OpenApiExample(
+                        name="WrongTypeForHourCodes",
+                        value={"schedule": {"hour_codes": { "0": ["Incorrect type. Expected pk value, received str."]}}}
+                    ),
                 ]
             ),
             401: OpenApiResponse(
@@ -672,13 +662,23 @@ class ReservationCreateView(APIView):
                 examples=[
                     OpenApiExample(
                         name="Unauthorized",
-                        value={"error": "Authentication credentials were not provided."}
+                        value={"detail": "Authentication credentials were not provided."}
+                    )
+                ]
+            ),
+            403: OpenApiResponse(
+                response=ErrorResponseSerializer,
+                description="Authenticated but not allowed to perform this action.",
+                examples=[
+                    OpenApiExample(
+                        name="Forbidden",
+                        value={"detail": "You do not have permission to perform this action."}
                     )
                 ]
             ),
             404: OpenApiResponse(
                 response=ErrorResponseSerializer,
-                description="Space not found.",
+                description="Space not found with the given ID.",
                 examples=[
                     OpenApiExample(
                         name="NotFound",
@@ -688,7 +688,7 @@ class ReservationCreateView(APIView):
             ),
             409: OpenApiResponse(
                 response=ErrorResponseSerializer,
-                description="Time conflict with existing reservations.",
+                description="Time conflict with existing reservations on the same date/space.",
                 examples=[
                     OpenApiExample(
                         name="Conflict",
@@ -698,76 +698,157 @@ class ReservationCreateView(APIView):
             ),
             422: OpenApiResponse(
                 response=ErrorResponseSerializer,
-                description="Unprocessable entity (e.g., invalid reservation type or reservee type).",
+                description="Unprocessable entity (e.g., invalid reservation/reservee type, role mismatch).",
                 examples=[
                     OpenApiExample(
-                        name="Unprocessable",
+                        name="InvalidReservationType",
                         value={"reservation_type": ["Invalid reservation type."]}
                     ),
                     OpenApiExample(
-                        name="UnprocessableReservee",
-                        value={"reservee_type": ["Invalid reservee type."]}
-                    )
+                        name="InvalidReserveeType",
+                        value={"reservee_type": ["You must be a student or staff to create a reservation."]}
+                    ),
+                    OpenApiExample(
+                        name="RoleMismatch",
+                        value={"error": "For the staff reservee type, you must select a staff."}
+                    ),
                 ]
             ),
             500: OpenApiResponse(
                 response=ErrorResponseSerializer,
-                description="Internal server error (e.g., database failure or email sending issue).",
+                description="Internal server error (database/mail/unexpected).",
                 examples=[
                     OpenApiExample(
-                        name="ServerError",
-                        value={"error": "An unexpected error occurred."}
+                        name="DatabaseError",
+                        value={"error": "Database connection failed."}
                     ),
                     OpenApiExample(
                         name="EmailError",
                         value={"error": "Failed to send reservation request to space manager."}
+                    ),
+                    OpenApiExample(
+                        name="UnexpectedError",
+                        value={"error": "An unexpected error occurred."}
                     )
                 ]
-            )
+            ),
         }
-    )        
+    )
     def post(self, request, space_id):
         space = get_object_or_404(Space, id=space_id)
-        request_data = request.data.copy()
-        request_data['space'] = space.id
-
         serializer = ReservationCreateSerializer(
-            data=request_data,
+            data=request.data,
             context={'request': request, 'space': space}
         )
-        
-        if not serializer.is_valid():
-            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
         try:
+            serializer.is_valid(raise_exception=True)
             reservation = serializer.save()
+        except DjangoValidationError as e:
+            return Response({"error": e.message if hasattr(e, "message") else e.messages[0]},
+                            status=status.HTTP_409_CONFLICT)
+        except Exception as e:
+            return Response({"error": f"An unexpected error occurred: {str(e)}"},
+                            status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-            existing_schedules = Schedule.objects.filter(
-                space=space,
-                date=reservation.schedule.date
-            ).exclude(pk=reservation.schedule.pk)
-            for schedule in existing_schedules:
-                if (reservation.schedule.start_hour_code.code <= schedule.end_hour_code.code and
-                    reservation.schedule.end_hour_code.code >= schedule.start_hour_code.code):
-                    reservation.delete() 
-                    return Response({"error": "This time conflicts with another schedule on the same date."}, status=status.HTTP_409_CONFLICT)
-
-            if space.space_manager and space.space_manager.email:
+        if space.space_manager and space.space_manager.email:
+            try:
                 send_mail(
                     subject='درخواست رزرو جدید',
-                    message=f'درخواستی جدید برای رزرو {space.name} در تاریخ {reservation.schedule.date} از ساعت {reservation.schedule.start_hour_code.time_range} تا {reservation.schedule.end_hour_code.time_range} ثبت شده است. لطفاً آن را بررسی کنید.',
+                    message=(
+                        f'درخواستی جدید برای رزرو {space.name} در تاریخ {reservation.schedule.date} '
+                        f'از {reservation.schedule.start_hour_code.time_range} تا '
+                        f'{reservation.schedule.end_hour_code.time_range} ثبت شده است.'
+                    ),
                     from_email="mahyajfri37@gmail.com",
                     recipient_list=[space.space_manager.email],
-                    fail_silently=True,
+                    fail_silently=False,
                 )
+            except Exception as e:
+                return Response({"error": f"Failed to send reservation request to space manager: {str(e)}"},
+                                status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-            return Response(serializer.data, status=status.HTTP_201_CREATED)
+        return Response(
+            ReservationCreateSerializer(reservation, context={'request': request}).data,
+            status=status.HTTP_201_CREATED
+        )
 
-        except ValueError as e:
-            return Response({"error": str(e)}, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
-        except Exception as e:
-            return Response({"error": "An unexpected error occurred."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-               
+from rest_framework import serializers, status
+from rest_framework.response import Response
+from rest_framework.views import APIView
+from drf_spectacular.utils import extend_schema, OpenApiResponse, OpenApiExample
+
+from .models import Reservation, Space, SpaceManager
+
+# ====== Serializer ======
+
+class ReservationListSerializer(serializers.ModelSerializer):
+    space_name = serializers.CharField(source='space.name', read_only=True)
+    date = serializers.DateField(source='schedule.date', read_only=True)
+    # این دو فیلد را از HourSlot.time_range استخراج می‌کنیم
+    start_time = serializers.SerializerMethodField()
+    end_time = serializers.SerializerMethodField()
+
+    status_display = serializers.CharField(source='get_status_display', read_only=True)
+    reservee_name = serializers.SerializerMethodField()
+    reservee_type = serializers.SerializerMethodField()
+    phone_number = serializers.CharField(read_only=True)
+
+    class Meta:
+        model = Reservation
+        fields = [
+            'id',
+            'space_name',
+            'date',
+            'start_time',
+            'end_time',
+            'status_display',
+            'reservation_type',
+            'description',
+            'reservee_name',
+            'reservee_type',
+            'phone_number',
+        ]
+
+    # ---- helpers ----
+    def _parse_time_range(self, time_range_str, pick='start'):
+        """
+        time_range_str مثل '07:00-08:00'
+        خروجی: '07:00:00' یا '08:00:00'
+        """
+        if not time_range_str or '-' not in time_range_str:
+            return None
+        parts = time_range_str.split('-')
+        val = parts[0] if pick == 'start' else parts[-1]
+        # نرمال‌سازی به HH:MM:SS
+        if len(val) == 5:  # 'HH:MM'
+            return f"{val}:00"
+        return val  # اگر قبلاً 'HH:MM:SS' بود
+
+    def get_start_time(self, obj):
+        slot = getattr(getattr(obj, 'schedule', None), 'start_hour_code', None)
+        return self._parse_time_range(getattr(slot, 'time_range', None), pick='start')
+
+    def get_end_time(self, obj):
+        slot = getattr(getattr(obj, 'schedule', None), 'end_hour_code', None)
+        return self._parse_time_range(getattr(slot, 'time_range', None), pick='end')
+
+    def get_reservee_name(self, obj):
+        # با توجه به مدل‌های شما: Student معمولاً به User وصل است
+        if obj.student and getattr(obj.student, 'user', None):
+            return f"{obj.student.user.first_name} {obj.student.user.last_name}".strip() or "unknown"
+        if obj.staff:
+            # اگر Staff مستقیماً نام و نام‌خانوادگی دارد
+            full = f"{obj.staff.first_name} {obj.staff.last_name}".strip()
+            return full or "unknown"
+        return "unknown"
+
+    def get_reservee_type(self, obj):
+        if obj.student:
+            return "student"
+        if obj.staff:
+            return "staff"
+        return "unknown"
+
 
 @extend_schema(tags=['space_manager'])
 class ManagerReservationListView(APIView):
@@ -790,18 +871,18 @@ class ManagerReservationListView(APIView):
                                 "start_time": "09:00:00",
                                 "end_time": "11:00:00",
                                 "status_display": "Under Review",
-                                "reservation_type": "string",
+                                "reservation_type": "event",
                                 "description": "string",
                                 "reservee_name": "string",
-                                "reservee_type": "string",
+                                "reservee_type": "student",
                                 "phone_number": "09123456789"
                             }
                         ]
                     ),
                     OpenApiExample(
                         name="NoReservations",
-                        value={"message": "No spaces managed by you."}  
-                    )
+                        value=[]
+                    ),
                 ]
             ),
             401: OpenApiResponse(
@@ -810,7 +891,7 @@ class ManagerReservationListView(APIView):
                 examples=[
                     OpenApiExample(
                         name="Unauthorized",
-                        value={"error": "Authentication credentials were not provided."}
+                        value={"detail": "Authentication credentials were not provided."}
                     )
                 ]
             ),
@@ -819,9 +900,13 @@ class ManagerReservationListView(APIView):
                 description="User is not a space manager or has no managed spaces.",
                 examples=[
                     OpenApiExample(
-                        name="Forbidden",
+                        name="Forbidden_NotManager",
                         value={"error": "You are not authorized to view this list."}
-                    )
+                    ),
+                    OpenApiExample(
+                        name="Forbidden_NoManagedSpaces",
+                        value={"error": "You do not manage any spaces."}
+                    ),
                 ]
             ),
             500: OpenApiResponse(
@@ -843,15 +928,31 @@ class ManagerReservationListView(APIView):
     def get(self, request):
         user = request.user
         try:
-            space_manager = user.spacemanager 
+            space_manager = user.spacemanager
         except SpaceManager.DoesNotExist:
-            return Response({"error": "You are not authorized to view this list."}, status=status.HTTP_403_FORBIDDEN)
+            return Response({"error": "You are not authorized to view this list."},
+                            status=status.HTTP_403_FORBIDDEN)
 
         managed_spaces = Space.objects.filter(space_manager=space_manager)
-        if not managed_spaces.exists():
-            return Response({"message": "No spaces managed by you."}, status=status.HTTP_200_OK)
 
-        reservations = Reservation.objects.filter(space__in=managed_spaces).select_related('schedule', 'space', 'student', 'staff')
+        if not managed_spaces.exists():
+            return Response([],
+                            status=status.HTTP_200_OK)
+
+        reservations = (
+            Reservation.objects
+            .filter(space__in=managed_spaces)
+            .select_related(
+                'space',
+                'schedule',
+                'schedule__start_hour_code',
+                'schedule__end_hour_code',
+                'student', 'student__user',
+                'staff'
+            )
+            .order_by('-schedule__date', '-schedule__start_hour_code__code', '-id')
+        )
+
         serializer = ReservationListSerializer(reservations, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
     

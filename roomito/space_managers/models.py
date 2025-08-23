@@ -67,7 +67,7 @@ class SpaceImage(models.Model):
 
 
 class HourSlot(models.Model):
-    code = models.PositiveSmallIntegerField(primary_key=True, unique=True)
+    code = models.PositiveSmallIntegerField(primary_key=True)
     time_range = models.CharField(max_length=11, unique=True)  
 
     def __str__(self):
@@ -127,7 +127,7 @@ class Reservation(models.Model):
 
     RESERVEE_TYPES = (
         ('student', 'Student'),
-        ('Staff', 'Staff'),
+        ('staff', 'Staff'),
     )
 
     STATUSES = (
@@ -151,13 +151,16 @@ class Reservation(models.Model):
     position = models.CharField(max_length=100, null=True, blank=True)
 
     def __str__(self):
-        reservee_name = self.student.first_name if self.student else self.staff.first_name if self.staff else "unknown"
+        reservee_name = self.student.first_name if self.student else (self.staff.first_name if self.staff else "unknown")
         if self.schedule:
-            return f"{self.reservation_type} - {self.schedule.date} {self.schedule.start_time} to {self.schedule.end_time} (reservee: {reservee_name}, status: {self.status})"
+            return (f"{self.reservation_type} - {self.schedule.date} "
+                    f"{self.schedule.start_hour_code.time_range} to {self.schedule.end_hour_code.time_range} "
+                    f"(reservee: {reservee_name}, status: {self.status})")
         return f"{self.reservation_type} - no schedule (reservee: {reservee_name}, status: {self.status})"
 
+
     def save(self, *args, **kwargs):
-        if self.student and self.Staff:
+        if self.student and self.staff:
             raise ValueError("You can only choose one student or one staff as the reservee.")
         if self.reservee_type == 'student' and not self.student:
             raise ValueError("For the student reservee type, you must select a student.")
