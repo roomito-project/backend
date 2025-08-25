@@ -149,6 +149,7 @@ class Reservation(models.Model):
     hosting_organizations = models.CharField(max_length=200, null=True, blank=True)
     responsible_organizer = models.CharField(max_length=100, null=True, blank=True)
     position = models.CharField(max_length=100, null=True, blank=True)
+    manager_comment = models.TextField(null=True, blank=True)
 
     def __str__(self):
         reservee_name = self.student.first_name if self.student else (self.staff.first_name if self.staff else "unknown")
@@ -188,22 +189,25 @@ class Event(models.Model):
     organizer = models.CharField(max_length=20, choices=ORGANIZER_TYPES)
     student_organizer = models.ForeignKey(Student, on_delete=models.SET_NULL, null=True, blank=True)
     staff_organizer = models.ForeignKey(Staff, on_delete=models.SET_NULL, null=True, blank=True)
-    description = models.CharField(default='no description')
+    description = models.CharField(max_length=500, default='no description')
     schedule = models.OneToOneField(Schedule, on_delete=models.SET_NULL, null=True, blank=True, related_name='event_instance')
 
     def __str__(self):
-        organizer = self.student_organizer.first_name if self.student_organizer else self.staff_organizer.first_name if self.staff_organizer else "unknown"
+        organizer = (
+            self.student_organizer.first_name if self.student_organizer else
+            self.staff_organizer.first_name if self.staff_organizer else "unknown"
+        )
         if self.schedule:
-            return f"{self.title} (organizer: {organizer}, {self.schedule.date} {self.schedule.start_time} to {self.schedule.end_time})"
+            return f"{self.title} (organizer: {organizer}, {self.schedule.date})"
         return f"{self.title} (organizer: {organizer}, no schedule)"
 
     def save(self, *args, **kwargs):
         if self.organizer == 'student' and not self.student_organizer:
             raise ValueError("For the organizer, you must select a student.")
-        if self.organizer == 'Staff' and not self.staff_organizer:
-            raise ValueError("For the organizer of the master, you must choose a master.")
+        if self.organizer == 'staff' and not self.staff_organizer:
+            raise ValueError("For the organizer, you must select a staff.")
         if self.student_organizer and self.staff_organizer:
-            raise ValueError("You can only choose one organizer (student or teacher).")
+            raise ValueError("You can only choose one organizer (student or staff).")
         super().save(*args, **kwargs)
 
 

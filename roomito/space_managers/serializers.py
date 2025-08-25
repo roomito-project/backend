@@ -174,8 +174,8 @@ class EventSerializer(serializers.ModelSerializer):
     staff_organizer = StaffSerializer(read_only=True)
     poster = serializers.ImageField(read_only=True, allow_null=True)
     date = serializers.DateField(source='schedule.date', read_only=True)
-    start_time = serializers.TimeField(source='schedule.start_time', read_only=True)
-    end_time = serializers.TimeField(source='schedule.end_time', read_only=True)
+    start_time = serializers.SerializerMethodField()
+    end_time = serializers.SerializerMethodField()
 
     class Meta:
         model = Event
@@ -186,19 +186,13 @@ class EventSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = fields
 
-    def validate(self, data):
-        organizer = data.get('organizer')
-        student = data.get('student_organizer')
-        staff = data.get('staff_organizer')
+    def get_start_time(self, obj):
+        slot = getattr(getattr(obj, 'schedule', None), 'start_hour_code', None)
+        return slot.time_range.split('-')[0] + ":00" if slot else None
 
-        if organizer == 'student' and not student:
-            raise serializers.ValidationError({"student_organizer": "A student must be selected when organizer is 'student'."})
-        if organizer == 'staff' and not staff:
-            raise serializers.ValidationError({"staff_organizer": "A staff must be selected when organizer is 'staff'."})
-        if student and staff:
-            raise serializers.ValidationError({"error": "Only one organizer (student or staff) can be selected."})
-
-        return data
+    def get_end_time(self, obj):
+        slot = getattr(getattr(obj, 'schedule', None), 'end_hour_code', None)
+        return slot.time_range.split('-')[-1] + ":00" if slot else None
 
 
 class EventDetailSerializer(serializers.ModelSerializer):
@@ -407,7 +401,44 @@ class ReservationListSerializer(serializers.ModelSerializer):
         if obj.staff:
             return "staff"
         return "unknown"
-      
+    
+    
+class ReservationDecisionSerializer(serializers.Serializer):
+    decision = serializers.ChoiceField(choices=['approved', 'rejected'])
+    manager_comment = serializers.CharField(required=False, allow_blank=True, max_length=500)
+
+    def validate(self, data):
+        request = self.context['request']
+        reservation = self.context['reservation']
+        if not reservation.space or reservation.space.space_manager != request.user.spacemanager:
+            raise serializers.ValidationError({"error": "You are not authorized to make a decision for this reservation."})
+        return data
+
+    def save(self, **kwargs):
+        reservation = self.context['reservation']
+        decision = self.validated_data['decision']
+        comment = self.validated_data.get('manager_comment', '')
+
+        if reservation.status != 'under_review':
+            raise serializers.ValidationError({"error": "This reservation has already been processed."})
+        
+        reservation.status = decision
+        reservation.manager_comment = comment
+        reservation.save()
+
+        if decision == 'approved':
+            Event.objects.create(
+                title=f"{reservation.reservation_type.title()} at {reservation.space.name}",
+                event_type=reservation.reservation_type,
+                space=reservation.space,
+                organizer=reservation.reservee_type,
+                student_organizer=reservation.student if reservation.reservee_type == 'student' else None,
+                staff_organizer=reservation.staff if reservation.reservee_type == 'staff' else None,
+                description=reservation.description,
+                schedule=reservation.schedule,
+            )
+        return reservation
+    
     
 class ManagerSpaceListSerializer(serializers.ModelSerializer):
     first_image_url = serializers.SerializerMethodField()

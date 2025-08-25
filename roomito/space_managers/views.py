@@ -15,6 +15,7 @@ from .serializers import (
     ErrorResponseSerializer,
     ManagerSpaceDetailSerializer,
     ManagerSpaceListSerializer,
+    ReservationDecisionSerializer,
     ScheduleAvailabilitySerializer,
     SpaceSerializer,
     SpaceUpdateFeatureSerializer,
@@ -384,8 +385,8 @@ class EventListView(APIView):
         except Exception as e:
             return Response({"error": "An unexpected server error occurred."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)        
   
-  
-@extend_schema(tags=['event'])      
+
+@extend_schema(tags=['event'])
 class EventDetailView(APIView):
     permission_classes = [IsAuthenticated]
 
@@ -396,12 +397,46 @@ class EventDetailView(APIView):
                 required=True,
                 type=int,
                 location=OpenApiParameter.PATH,
+                description="ID of the event to retrieve"
             )
         ],
         responses={
             200: OpenApiResponse(
-                response=EventDetailSerializer,
+                response=EventSerializer,
                 description="Detailed event data retrieved successfully.",
+                examples=[
+                    OpenApiExample(
+                        name="Success",
+                        value={
+                            "id": 10,
+                            "title": "string",
+                            "event_type": "event",
+                            "date": "2025-08-25",
+                            "start_time": "09:00:00",
+                            "end_time": "11:00:00",
+                            "space": {
+                                "id": 2,
+                                "name": "string",
+                                "capacity": 50
+                            },
+                            "poster": None,
+                            "organizer": "student",
+                            "student_organizer": {"id": 5, "user": {"first_name": "string", "last_name": "string"}},
+                            "staff_organizer": None,
+                            "description": "string"
+                        }
+                    )
+                ]
+            ),
+            401: OpenApiResponse(
+                response=ErrorResponseSerializer,
+                description="User is not authenticated.",
+                examples=[
+                    OpenApiExample(
+                        name="Unauthorized",
+                        value={"detail": "Authentication credentials were not provided."}
+                    )
+                ]
             ),
             404: OpenApiResponse(
                 response=ErrorResponseSerializer,
@@ -409,8 +444,7 @@ class EventDetailView(APIView):
                 examples=[
                     OpenApiExample(
                         name="NotFound",
-                        value={"error": "Event with this ID does not exist."},
-                        response_only=True,
+                        value={"error": "Event with this ID does not exist."}
                     )
                 ]
             ),
@@ -420,25 +454,26 @@ class EventDetailView(APIView):
                 examples=[
                     OpenApiExample(
                         name="ServerError",
-                        value={"error": "An unexpected server error occurred."},
-                        response_only=True
+                        value={"error": "An unexpected server error occurred."}
                     )
                 ]
             )
         },
-        description="Retrieves detailed information of a specific event by ID for authenticated user."
+        description="Retrieve detailed information of a specific event by ID (only for authenticated users)."
     )
-
     def get(self, request, event_id):
         try:
-            event = Event.objects.get(id=event_id)
+            event = Event.objects.select_related(
+                "space", "student_organizer", "staff_organizer", "schedule",
+                "schedule__start_hour_code", "schedule__end_hour_code"
+            ).get(id=event_id)
         except Event.DoesNotExist:
-            return Response({"error": "Event with this ID does not exist."}, status=404)
+            return Response({"error": "Event with this ID does not exist."}, status=status.HTTP_404_NOT_FOUND)
         except Exception:
-            return Response({"error": "An unexpected server error occurred."}, status=500)
+            return Response({"error": "An unexpected server error occurred."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-        serializer = EventDetailSerializer(event)
-        return Response(serializer.data, status=200)
+        serializer = EventSerializer(event)
+        return Response(serializer.data, status=status.HTTP_200_OK)
 
 
 @extend_schema(tags=['space_manager'])
@@ -771,84 +806,7 @@ class ReservationCreateView(APIView):
             ReservationCreateSerializer(reservation, context={'request': request}).data,
             status=status.HTTP_201_CREATED
         )
-
-from rest_framework import serializers, status
-from rest_framework.response import Response
-from rest_framework.views import APIView
-from drf_spectacular.utils import extend_schema, OpenApiResponse, OpenApiExample
-
-from .models import Reservation, Space, SpaceManager
-
-# ====== Serializer ======
-
-class ReservationListSerializer(serializers.ModelSerializer):
-    space_name = serializers.CharField(source='space.name', read_only=True)
-    date = serializers.DateField(source='schedule.date', read_only=True)
-    # این دو فیلد را از HourSlot.time_range استخراج می‌کنیم
-    start_time = serializers.SerializerMethodField()
-    end_time = serializers.SerializerMethodField()
-
-    status_display = serializers.CharField(source='get_status_display', read_only=True)
-    reservee_name = serializers.SerializerMethodField()
-    reservee_type = serializers.SerializerMethodField()
-    phone_number = serializers.CharField(read_only=True)
-
-    class Meta:
-        model = Reservation
-        fields = [
-            'id',
-            'space_name',
-            'date',
-            'start_time',
-            'end_time',
-            'status_display',
-            'reservation_type',
-            'description',
-            'reservee_name',
-            'reservee_type',
-            'phone_number',
-        ]
-
-    # ---- helpers ----
-    def _parse_time_range(self, time_range_str, pick='start'):
-        """
-        time_range_str مثل '07:00-08:00'
-        خروجی: '07:00:00' یا '08:00:00'
-        """
-        if not time_range_str or '-' not in time_range_str:
-            return None
-        parts = time_range_str.split('-')
-        val = parts[0] if pick == 'start' else parts[-1]
-        # نرمال‌سازی به HH:MM:SS
-        if len(val) == 5:  # 'HH:MM'
-            return f"{val}:00"
-        return val  # اگر قبلاً 'HH:MM:SS' بود
-
-    def get_start_time(self, obj):
-        slot = getattr(getattr(obj, 'schedule', None), 'start_hour_code', None)
-        return self._parse_time_range(getattr(slot, 'time_range', None), pick='start')
-
-    def get_end_time(self, obj):
-        slot = getattr(getattr(obj, 'schedule', None), 'end_hour_code', None)
-        return self._parse_time_range(getattr(slot, 'time_range', None), pick='end')
-
-    def get_reservee_name(self, obj):
-        # با توجه به مدل‌های شما: Student معمولاً به User وصل است
-        if obj.student and getattr(obj.student, 'user', None):
-            return f"{obj.student.user.first_name} {obj.student.user.last_name}".strip() or "unknown"
-        if obj.staff:
-            # اگر Staff مستقیماً نام و نام‌خانوادگی دارد
-            full = f"{obj.staff.first_name} {obj.staff.last_name}".strip()
-            return full or "unknown"
-        return "unknown"
-
-    def get_reservee_type(self, obj):
-        if obj.student:
-            return "student"
-        if obj.staff:
-            return "staff"
-        return "unknown"
-
+        
 
 @extend_schema(tags=['space_manager'])
 class ManagerReservationListView(APIView):
@@ -956,6 +914,72 @@ class ManagerReservationListView(APIView):
         serializer = ReservationListSerializer(reservations, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
     
+
+@extend_schema(tags=['space_manager'])
+class ReservationDecisionView(APIView):
+    permission_classes = [IsSpaceManagerUser]
+
+    @extend_schema(
+        description="Approve or reject a reservation request by space manager. If approved, an Event will be created.",
+        request=ReservationDecisionSerializer,
+        responses={
+            200: OpenApiResponse(
+                response=ReservationListSerializer,
+                description="Reservation decision successfully applied."
+            ),
+            400: OpenApiResponse(
+                response=ErrorResponseSerializer,
+                description="Invalid request (e.g., already decided, not authorized).",
+                examples=[
+                    OpenApiExample(
+                        name="AlreadyDecided",
+                        value={"error": "This reservation has already been processed."}
+                    )
+                ]
+            ),
+            401: OpenApiResponse(
+                response=ErrorResponseSerializer,
+                description="User not authenticated.",
+                examples=[OpenApiExample(name="Unauthorized", value={"detail": "Authentication credentials were not provided."})]
+            ),
+            403: OpenApiResponse(
+                response=ErrorResponseSerializer,
+                description="User is not the manager of this space.",
+                examples=[OpenApiExample(name="Forbidden", value={"error": "You are not authorized to make a decision for this reservation."})]
+            ),
+            404: OpenApiResponse(
+                response=ErrorResponseSerializer,
+                description="Reservation not found.",
+                examples=[OpenApiExample(name="NotFound", value={"error": "Reservation not found."})]
+            ),
+            500: OpenApiResponse(
+                response=ErrorResponseSerializer,
+                description="Unexpected server error.",
+                examples=[OpenApiExample(name="ServerError", value={"error": "An unexpected error occurred."})]
+            ),
+        }
+    )
+    def post(self, request, reservation_id):
+        reservation = get_object_or_404(Reservation, id=reservation_id)
+
+        if reservation.status != 'under_review':
+            return Response({"error": "This reservation has already been processed."},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        serializer = ReservationDecisionSerializer(
+            data=request.data,
+            context={'request': request, 'reservation': reservation}
+        )
+        serializer.is_valid(raise_exception=True)
+        updated_reservation = serializer.save()
+
+        if updated_reservation.status == "approved":
+            message = "Reservation approved successfully and added to events list."
+        else:
+            message = "Reservation rejected successfully."
+
+        return Response({"message": message}, status=status.HTTP_200_OK)
+
 
 @extend_schema(tags=['space'])
 class SpaceDetailView(APIView):

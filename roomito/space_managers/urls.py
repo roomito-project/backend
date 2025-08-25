@@ -14,7 +14,8 @@ from .views import (
     ManagerSpaceListView,
     ManagerSpaceCreateView,
     ManagerSpaceUpdateView,
-    ScheduleAvailabilityView
+    ScheduleAvailabilityView,
+    ReservationDecisionView
 )
 
 urlpatterns = [
@@ -33,4 +34,5 @@ urlpatterns = [
     path('spacemanager/createSpace/', ManagerSpaceCreateView.as_view(), name="create-space"),
     path('spacemanager/<int:space_id>/updateSpace/', ManagerSpaceUpdateView.as_view(), name="update-space"),
     path('schedules/availability/', ScheduleAvailabilityView.as_view(), name='schedule-availability'),
+    path('spacemanager/<int:reservation_id>/decision/',ReservationDecisionView.as_view(), name='reservations-desicion')
     ]
