@@ -66,18 +66,18 @@ class StaffRegisterSerializer(serializers.Serializer):
 
 
 class StaffProfileUpdateSerializer(serializers.Serializer):
-    first_name = serializers.CharField(max_length=100)
-    last_name = serializers.CharField(max_length=100)
-    personnel_code = serializers.CharField(max_length=20)
-    national_id = serializers.CharField(max_length=10)
-    email = serializers.EmailField()
+    first_name = serializers.CharField(max_length=100, required=False)
+    last_name  = serializers.CharField(max_length=100, required=False)
+    personnel_code = serializers.CharField(max_length=20, required=False)
+    national_id    = serializers.CharField(max_length=10, required=False)
+    email = serializers.EmailField(required=False)
+
     current_password = serializers.CharField(write_only=True, required=False)
-    new_password = serializers.CharField(write_only=True, required=False, min_length=8)  
-    
-    def validate_password(self, value):
-        validate_password_strength(value)
-        return value
-    
+    new_password     = serializers.CharField(write_only=True, required=False, min_length=8)
+
+    def validate_new_password(self, value):
+        return validate_password_strength(value)
+
     def validate(self, attrs):
         if 'new_password' in attrs:
             if 'current_password' not in attrs:
@@ -86,40 +86,58 @@ class StaffProfileUpdateSerializer(serializers.Serializer):
             if not user.check_password(attrs['current_password']):
                 raise serializers.ValidationError({"current_password": "Current password is incorrect."})
         return attrs
-    
+
     def validate_personnel_code(self, value):
-        staff = self.context['request'].user.Staff
+        request = self.context.get('request')
+        if not request:
+            return value
+        staff = getattr(request.user, 'staff', None)
+        if staff is None:
+            return value
         if Staff.objects.exclude(pk=staff.pk).filter(personnel_code=value).exists():
             raise serializers.ValidationError("This personnel code is already in use.")
         return value
 
     def validate_national_id(self, value):
-        staff = self.context['request'].user.Staff
+        if value and (len(value) != 10 or not value.isdigit()):
+            raise serializers.ValidationError("National ID must be exactly 10 digits.")
+        request = self.context.get('request')
+        if not request:
+            return value
+        staff = getattr(request.user, 'staff', None)
+        if staff is None:
+            return value
+        from .models import Staff
         if Staff.objects.exclude(pk=staff.pk).filter(national_id=value).exists():
             raise serializers.ValidationError("This national ID is already in use.")
         return value
-    
+
     # def validate_email(self, value):
-    #     user = self.context['request'].user.Staff
-    #     if Staff.objects.exclude(pk=Staff.pk).filter(email=value).exists():
+    #     instance = getattr(self, 'instance', None) 
+    #     current_user_id = instance.user_id if instance else None
+    #     if User.objects.exclude(pk=current_user_id).filter(email=value).exists():
     #         raise serializers.ValidationError("This email is already in use.")
     #     return value
-    
+
     def update(self, instance, validated_data):
-            user = instance.user
+    
+        user = instance.user
 
-            if 'new_password' in validated_data:
-                user.set_password(validated_data['new_password'])
-            user.first_name = validated_data.get("first_name", user.first_name)
-            user.last_name = validated_data.get("last_name", user.last_name)
-            user.email = validated_data.get("email", user.email)
-            user.save()
+        new_password = validated_data.get('new_password')
+        if new_password:
+            user.set_password(new_password)
 
-            for field in ['first_name', 'last_name', 'email', 'personnel_code', 'national_id']:
-                setattr(instance, field, validated_data.get(field, getattr(instance, field)))
-            instance.save()
+        for f in ('first_name', 'last_name', 'email'):
+            if f in validated_data:
+                setattr(user, f, validated_data[f])
+        user.save()
 
-            return instance
+        for f in ('first_name', 'last_name', 'email', 'personnel_code', 'national_id'):
+            if f in validated_data:
+                setattr(instance, f, validated_data[f])
+
+        instance.save()
+        return instance
     
 
 class StaffProfileSerializer(serializers.ModelSerializer):

@@ -233,16 +233,20 @@ class StaffProfileUpdateView(APIView):
     def patch(self, request):
         user = request.user
         try:
-            staff = user.staff
+            staff = user.staff 
         except Staff.DoesNotExist:
             return Response({"error": "User is not a Staff."}, status=status.HTTP_403_FORBIDDEN)
 
-        serializer = StaffProfileUpdateSerializer(instance=staff, data=request.data, partial=True)
-        if serializer.is_valid():
-            serializer.save()
-            return Response({"message": "Profile updated successfully."}, status=status.HTTP_200_OK)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-    
+        serializer = StaffProfileUpdateSerializer(
+            instance=staff,
+            data=request.data,
+            partial=True,
+            context={'request': request} 
+        )
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+
+        return Response({"message": "Profile updated successfully."}, status=status.HTTP_200_OK)
 
 @extend_schema(tags=['staff'])
 class StaffProfileView(APIView):
