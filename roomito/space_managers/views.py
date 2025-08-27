@@ -8,7 +8,7 @@ from .models import HourSlot, Reservation, Schedule, Space, Event, SpaceFeature,
 from django.shortcuts import get_object_or_404
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.core.mail import send_mail
-from rest_framework.parsers import MultiPartParser, FormParser
+from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 from drf_spectacular.types import OpenApiTypes
 from django.utils import timezone
 from .serializers import (
@@ -1313,11 +1313,14 @@ class ManagerSpaceDetailView(APIView):
 @extend_schema(tags=['space_manager'])
 class ManagerSpaceCreateView(APIView):
     permission_classes = [IsSpaceManagerUser]
-    parser_classes = [MultiPartParser, FormParser]  
+    parser_classes = [MultiPartParser, FormParser, JSONParser]  
 
     @extend_schema(
         description="Create a new space by authenticated space manager.",
-        request=SpaceCreateSerializer,
+        request={
+            "multipart/form-data": SpaceCreateSerializer,
+            "application/json": SpaceCreateSerializer,
+        },
         responses={
             201: OpenApiResponse(
                 response=SpaceSerializer,
@@ -1401,15 +1404,16 @@ class ManagerSpaceCreateView(APIView):
     )
     def post(self, request):
         serializer = SpaceCreateSerializer(data=request.data, context={"request": request})
-        if not serializer.is_valid():
-            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
         try:
+            serializer.is_valid(raise_exception=True)
             space = serializer.save()
-            return Response(SpaceSerializer(space, context={"request": request}).data, status=status.HTTP_201_CREATED)
+        except Exception as e:
+            return Response(e.detail, status=status.HTTP_400_BAD_REQUEST)
         except Exception as e:
             print("Unexpected error:", str(e))
             return Response({"error": "An unexpected error occurred."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+        return Response(SpaceSerializer(space, context={"request": request}).data, status=status.HTTP_201_CREATED)
 
 
 @extend_schema(tags=["space_manager"])
@@ -1513,26 +1517,24 @@ class ManagerSpaceUpdateView(APIView):
     )
     def put(self, request, space_id):
         try:
-            space = Space.objects.get(id=space_id)
-            if not request.user == space.space_manager.user:
-                return Response(
-                    {"error": "You are not authorized to update this space."},
-                    status=status.HTTP_403_FORBIDDEN
-                )
-
-            serializer = SpaceUpdateSerializer(instance=space, data=request.data)
-            if not serializer.is_valid():
-                return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
-            updated_space = serializer.save()
-
-            return Response(SpaceSerializer(updated_space).data, status=status.HTTP_200_OK)
-
+            space = Space.objects.select_related("space_manager__user").get(id=space_id)
         except Space.DoesNotExist:
             return Response({"error": "Space not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        if not hasattr(space, "space_manager") or request.user != getattr(space.space_manager, "user", None):
+            return Response({"error": "You are not authorized to update this space."},
+                            status=status.HTTP_403_FORBIDDEN)
+
+        serializer = SpaceUpdateSerializer(instance=space, data=request.data)
+        try:
+            serializer.is_valid(raise_exception=True)
+            updated_space = serializer.save()
         except Exception as e:
-            print(f"Unexpected error: {str(e)}")
+            return Response(e.detail, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as e:
             return Response({"error": "An unexpected error occurred."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+        return Response(SpaceSerializer(updated_space).data, status=status.HTTP_200_OK)
         
 
 @extend_schema(tags=['reservation'])

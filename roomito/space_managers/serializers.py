@@ -5,6 +5,7 @@ from staffs.models import Staff
 from students.models import Student
 from common.validators import validate_password_strength
 from django.core.validators import MinValueValidator
+from django.utils.datastructures import MultiValueDict
 
 
 class ErrorResponseSerializer(serializers.Serializer):
@@ -343,6 +344,7 @@ class ReservationCreateSerializer(serializers.ModelSerializer):
         )
         return reservation
         
+        
 class ReservationListSerializer(serializers.ModelSerializer):
     space_name = serializers.CharField(source='space.name', read_only=True)
     date = serializers.DateField(source='schedule.date', read_only=True)
@@ -490,92 +492,123 @@ class SpaceCreateSerializer(serializers.ModelSerializer):
         ]
 
     def to_internal_value(self, data):
-        mutable = data.copy()
+        if isinstance(data, MultiValueDict):
+            normalized = {}
 
-        features = mutable.get("features")
-        if features:
-            if isinstance(features, str):
-                try:
-                    mutable.setlist("features", [int(f.strip()) for f in features.split(",")])
-                except ValueError:
-                    pass 
-                
-        if mutable.get('features') == "":
-            mutable.pop('features') 
-            
-        if mutable.get('images') == "":
-            mutable.pop('images') 
-             
-        return super().to_internal_value(mutable)
+            for key in ["space_type", "name", "address", "capacity", "phone_number", "description"]:
+                if key in data:
+                    normalized[key] = data.get(key)
+
+            if "features" in data:
+                feats = data.getlist("features")
+                if len(feats) == 1 and isinstance(feats[0], str) and ',' in feats[0]:
+                    feats = [x.strip() for x in feats[0].split(',') if x.strip()]
+                if len(feats) == 1 and feats[0] == "":
+                    feats = []
+                normalized["features"] = feats
+
+            if "images" in data:
+                imgs = [f for f in data.getlist("images") if f]  
+                normalized["images"] = imgs
+
+            return super().to_internal_value(normalized)
+
+        if isinstance(data, dict):
+            if "features" in data and isinstance(data["features"], str):
+                feats = [f.strip() for f in data["features"].split(",") if f.strip()]
+                data = {**data, "features": feats}
+
+            if data.get("features") == "":
+                data = {**data}
+                data.pop("features")
+            if data.get("images") == "":
+                data = {**data}
+                data.pop("images")
+
+        return super().to_internal_value(data)
 
     def create(self, validated_data):
         features = validated_data.pop("features", [])
-        images = validated_data.pop("images", [])
-        request = self.context["request"]
+        images   = validated_data.pop("images", [])
+        request  = self.context["request"]
 
         space = Space.objects.create(
             space_manager=request.user.spacemanager,
             **validated_data
         )
+
         if features:
             space.features.set(features)
 
-        for img in images:
-            SpaceImage.objects.create(space=space, image=img)
+        if images:
+            for img in images:
+                SpaceImage.objects.create(space=space, image=img)
 
         return space
-    
+
 
 class SpaceUpdateSerializer(serializers.ModelSerializer):
-    space_type = serializers.ChoiceField(choices=Space.SPACE_TYPES, required=True)
-    name = serializers.CharField(max_length=100, required=True)
-    address = serializers.CharField(required=True)
-    capacity = serializers.IntegerField(validators=[MinValueValidator(1)], required=True)
+    space_type = serializers.ChoiceField(choices=Space.SPACE_TYPES, required=False)
+    name = serializers.CharField(max_length=100, required=False)
+    address = serializers.CharField(required=False)
+    capacity = serializers.IntegerField(validators=[MinValueValidator(1)], required=False)
     phone_number = serializers.CharField(max_length=11, required=False, allow_null=True, allow_blank=True)
     description = serializers.CharField(required=False, allow_blank=True)
+
     features = serializers.PrimaryKeyRelatedField(
         queryset=SpaceFeature.objects.all(),
         many=True,
-        required=True  
+        required=False
     )
     images = serializers.ListField(
         child=serializers.ImageField(),
-        required=True  
+        required=False  
     )
 
     class Meta:
         model = Space
-        fields = ["space_type", "name", "address", "capacity", "phone_number", "description", "features", "images"]
+        fields = ["space_type", "name", "address", "capacity", "phone_number",
+                  "description", "features", "images"]
 
-    def validate(self, attrs):
-        return attrs
-    
     def to_internal_value(self, data):
-        mutable = data.copy()
-        features = mutable.get("features")
-        if features:
-            if isinstance(features, str):
-                try:
-                    mutable.setlist("features", [int(f.strip()) for f in features.split(",")])
-                except ValueError:
-                    pass
-        return super().to_internal_value(mutable)
+        if isinstance(data, (MultiValueDict,)):
+            normalized = {}
+            for key in ["space_type", "name", "address", "capacity", "phone_number", "description"]:
+                if key in data:
+                    normalized[key] = data.get(key)
+
+            if "features" in data:
+                feats = data.getlist("features")
+                if len(feats) == 1 and isinstance(feats[0], str) and ',' in feats[0]:
+                    feats = [x.strip() for x in feats[0].split(',') if x.strip()]
+                normalized["features"] = feats
+
+            normalized["images"] = data.getlist("images")
+
+            return super().to_internal_value(normalized)
+
+        if isinstance(data, dict) and "features" in data and isinstance(data["features"], str):
+            feats = [f.strip() for f in data["features"].split(",") if f.strip()]
+            data = {**data, "features": feats}
+
+        return super().to_internal_value(data)
 
     def update(self, instance, validated_data):
-        instance.space_type = validated_data.get("space_type", instance.space_type)
-        instance.name = validated_data.get("name", instance.name)
-        instance.address = validated_data.get("address", instance.address)
-        instance.capacity = validated_data.get("capacity", instance.capacity)
+        instance.space_type   = validated_data.get("space_type", instance.space_type)
+        instance.name         = validated_data.get("name", instance.name)
+        instance.address      = validated_data.get("address", instance.address)
+        instance.capacity     = validated_data.get("capacity", instance.capacity)
         instance.phone_number = validated_data.get("phone_number", instance.phone_number)
-        instance.description = validated_data.get("description", instance.description)
+        instance.description  = validated_data.get("description", instance.description)
 
-        features = validated_data.get("features", [])
-        instance.features.set(features)
+        if "features" in validated_data:
+            instance.features.set(validated_data["features"])
 
-        images = validated_data.get("images", [])
-        instance.images.all().delete() 
-        for img in images:
-            SpaceImage.objects.create(space=instance, image=img)
+        if "images" in validated_data:
+            new_images = validated_data["images"] or []
+            instance.images.all().delete()
+            for img in new_images:
+                SpaceImage.objects.create(space=instance, image=img)
 
         instance.save()
         return instance
