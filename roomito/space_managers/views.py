@@ -771,6 +771,7 @@ class ReservationCreateView(APIView):
     )
     def post(self, request, space_id):
         space = get_object_or_404(Space, id=space_id)
+
         serializer = ReservationCreateSerializer(
             data=request.data,
             context={'request': request, 'space': space}
@@ -796,7 +797,7 @@ class ReservationCreateView(APIView):
                     ),
                     from_email="mahyajfri37@gmail.com",
                     recipient_list=[space.space_manager.email],
-                    fail_silently=False,
+                    fail_silently=True,
                 )
             except Exception as e:
                 return Response({"error": f"Failed to send reservation request to space manager: {str(e)}"},

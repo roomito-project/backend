@@ -152,7 +152,7 @@ class Reservation(models.Model):
     manager_comment = models.TextField(null=True, blank=True)
 
     def __str__(self):
-        reservee_name = self.student.first_name if self.student else (self.staff.first_name if self.staff else "unknown")
+        reservee_name = self.student.user.first_name if self.student else (self.staff.first_name if self.staff else "unknown")
         if self.schedule:
             return (f"{self.reservation_type} - {self.schedule.date} "
                     f"{self.schedule.start_hour_code.time_range} to {self.schedule.end_hour_code.time_range} "

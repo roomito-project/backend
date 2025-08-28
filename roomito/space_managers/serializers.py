@@ -281,13 +281,9 @@ class ScheduleSerializer(serializers.ModelSerializer):
         )
         return schedule
 
-
 class ReservationCreateSerializer(serializers.ModelSerializer):
     phone_number = serializers.CharField(
-        required=False,
-        allow_blank=True,
-        max_length=11,
-        min_length=11,
+        required=False, allow_blank=True, max_length=11, min_length=11,
         error_messages={
             'max_length': ['Phone number must be exactly 11 digits.'],
             'min_length': ['Phone number must be exactly 11 digits.']
@@ -312,11 +308,11 @@ class ReservationCreateSerializer(serializers.ModelSerializer):
     def validate(self, data):
         user = self.context['request'].user
 
-        if hasattr(user, 'student_profile'):
+        if hasattr(user, 'student_profile') and user.student_profile is not None:
             data['reservee_type'] = 'student'
             data['student'] = user.student_profile
             data['staff'] = None
-        elif hasattr(user, 'staff'):
+        elif hasattr(user, 'staff') and user.staff is not None:
             data['reservee_type'] = 'staff'
             data['staff'] = user.staff
             data['student'] = None
@@ -330,7 +326,7 @@ class ReservationCreateSerializer(serializers.ModelSerializer):
         return data
 
     def create(self, validated_data):
-        schedule_data = validated_data.pop('schedule') 
+        schedule_data = validated_data.pop('schedule')
         space = self.context.get('space')
         if not space:
             raise serializers.ValidationError({"space": ["Space context is missing."]})
@@ -343,7 +339,7 @@ class ReservationCreateSerializer(serializers.ModelSerializer):
             **validated_data
         )
         return reservation
-        
+      
         
 class ReservationListSerializer(serializers.ModelSerializer):
     space_name = serializers.CharField(source='space.name', read_only=True)
