@@ -11,6 +11,7 @@ from django.core.mail import send_mail
 from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 from drf_spectacular.types import OpenApiTypes
 from django.utils import timezone
+from django.db import transaction
 from .serializers import (
     ErrorResponseSerializer,
     ManagerSpaceDetailSerializer,
@@ -1749,3 +1750,65 @@ class ReservationDetailView(APIView):
             print("Unexpected error:", str(e))
             return Response({"error": "An unexpected error occurred."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
     
+    
+@extend_schema(tags=['space_manager'])
+class ManagerSpaceDeleteView(APIView):
+    permission_classes = [IsSpaceManagerUser]   
+    
+    @extend_schema(
+        parameters=[
+            OpenApiParameter(
+                name="space_id",
+                required=True,
+                type=int,
+                location=OpenApiParameter.PATH,
+            )
+        ],
+        responses={
+            200:OpenApiResponse(
+            response=None,
+                description="Space deleted successfully.",
+                examples=[OpenApiExample("Deleted", value={"message": "Space deleted successfully."})]
+            ),
+            401: OpenApiResponse(
+                response=ErrorResponseSerializer,
+                description="Unauthorized.",
+                examples=[OpenApiExample("Unauthorized", value={"detail": "Authentication credentials were not provided."})]
+            ),
+            403: OpenApiResponse(
+                response=ErrorResponseSerializer,
+                description="Forbidden – Not the manager of this space.",
+                examples=[OpenApiExample("Forbidden", value={"error": "You are not authorized to delete this space."})]
+            ),
+            404: OpenApiResponse(
+                response=ErrorResponseSerializer,
+                description="Space not found.",
+                examples=[OpenApiExample("NotFound", value={"error": "Space not found."})]
+            ),
+            500: OpenApiResponse(
+                response=ErrorResponseSerializer,
+                description="Unexpected server error.",
+                examples=[OpenApiExample("ServerError", value={"error": "An unexpected error occurred."})]
+            ),
+        },
+        description=(
+            "Delete a space owned by the authenticated space manager. "
+        ),
+    )
+    def delete(self, request, space_id):
+        try:
+            space = get_object_or_404(Space, id=space_id)
+
+            if not hasattr(request.user, "spacemanager") or space.space_manager != request.user.spacemanager:
+                return Response({"error": "You are not authorized to delete this space."},
+                                status=status.HTTP_403_FORBIDDEN)
+
+            with transaction.atomic():
+                space.delete()
+
+            return Response({"message": "Space deleted successfully."}, status=status.HTTP_200_OK)
+
+        except Space.DoesNotExist:
+            return Response({"error": "Space not found."}, status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            return Response({"error": "An unexpected error occurred."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

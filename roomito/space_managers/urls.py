@@ -1,5 +1,6 @@
 from django.urls import path
 from .views import (
+    ManagerSpaceDeleteView,
     ReservationDetailView,
     SpaceManagerProfileView,
     SpaceListView,
@@ -26,7 +27,6 @@ urlpatterns = [
     path("events/<int:event_id>/", EventDetailView.as_view(), name="event-details"),
     path("spacemanager/updateProfile/", SpaceManagerProfileUpdateView.as_view(), name="space-manager-profile-update"),
     path("<int:space_id>/features", SpaceFeatureView.as_view(), name="space-feature-update"),
-    # path("<int:space_id>/updateFeatures", SpaceUpdateFeatureView.as_view(), name="space-feature-update"),
     path('<int:space_id>/reserve/', ReservationCreateView.as_view(), name='space_reserve'),
     path('spacemanager/reservations/', ManagerReservationListView.as_view(), name='manager_reservations'),
     path('space/<int:space_id>/', SpaceDetailView.as_view(), name="space-details"),
@@ -36,5 +36,6 @@ urlpatterns = [
     path('spacemanager/<int:space_id>/updateSpace/', ManagerSpaceUpdateView.as_view(), name="update-space"),
     path('schedules/availability/', ScheduleAvailabilityView.as_view(), name='schedule-availability'),
     path('spacemanager/<int:reservation_id>/decision/',ReservationDecisionView.as_view(), name='reservations-desicion'),
-    path("api/spacemanager/<int:reservation_id>/", ReservationDetailView.as_view(), name="reservation-detail")
+    path("api/spacemanager/<int:reservation_id>/", ReservationDetailView.as_view(), name="reservation-detail"),
+    path("api/spacemanager/<int:space_id>/delete/", ManagerSpaceDeleteView.as_view(), name="space-delete"),
     ]
