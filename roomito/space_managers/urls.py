@@ -1,5 +1,6 @@
 from django.urls import path
 from .views import (
+    ReservationDetailView,
     SpaceManagerProfileView,
     SpaceListView,
     EventListView,
@@ -34,5 +35,6 @@ urlpatterns = [
     path('spacemanager/createSpace/', ManagerSpaceCreateView.as_view(), name="create-space"),
     path('spacemanager/<int:space_id>/updateSpace/', ManagerSpaceUpdateView.as_view(), name="update-space"),
     path('schedules/availability/', ScheduleAvailabilityView.as_view(), name='schedule-availability'),
-    path('spacemanager/<int:reservation_id>/decision/',ReservationDecisionView.as_view(), name='reservations-desicion')
+    path('spacemanager/<int:reservation_id>/decision/',ReservationDecisionView.as_view(), name='reservations-desicion'),
+    path("api/spacemanager/<int:reservation_id>/", ReservationDetailView.as_view(), name="reservation-detail")
     ]

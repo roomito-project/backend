@@ -75,7 +75,7 @@ class UnifiedLoginView(APIView):
         role = (serializer.validated_data['role'] or '').strip().lower()
         username = (serializer.validated_data['username'] or '').strip()
         password = serializer.validated_data['password'] 
-
+    
         try:
             if role == 'staff':
                 try:

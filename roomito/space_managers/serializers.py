@@ -281,6 +281,7 @@ class ScheduleSerializer(serializers.ModelSerializer):
         )
         return schedule
 
+
 class ReservationCreateSerializer(serializers.ModelSerializer):
     phone_number = serializers.CharField(
         required=False, allow_blank=True, max_length=11, min_length=11,
@@ -608,3 +609,30 @@ class SpaceUpdateSerializer(serializers.ModelSerializer):
 
         instance.save()
         return instance
+
+
+class ReservationDetailSerializer(serializers.ModelSerializer):
+    space = SpaceSerializer(read_only=True)
+    schedule_date = serializers.DateField(source='schedule.date', read_only=True)
+    start_time = serializers.TimeField(source='schedule.start_hour_code.time_range', read_only=True)
+    end_time = serializers.TimeField(source='schedule.end_hour_code.time_range', read_only=True)
+    reservee_name = serializers.SerializerMethodField()
+    reservee_type = serializers.CharField( read_only=True)
+
+    class Meta:
+        model = Reservation
+        fields = [
+            'id', 'reservation_type', 'reservee_type',
+            'reservee_name', 'phone_number', 'description',
+            'status', 'manager_comment',
+            'space', 'schedule_date', 'start_time', 'end_time',
+            'hosting_association', 'hosting_organizations',
+            'responsible_organizer', 'position'
+        ]
+
+    def get_reservee_name(self, obj):
+        if obj.student and obj.student.user:
+            return f"{obj.student.user.first_name} {obj.student.user.last_name}"
+        elif obj.staff:
+            return f"{obj.staff.first_name} {obj.staff.last_name}"
+        return "unknown"

@@ -79,12 +79,23 @@ class StaffProfileUpdateSerializer(serializers.Serializer):
         return validate_password_strength(value)
 
     def validate(self, attrs):
-        if 'new_password' in attrs:
-            if 'current_password' not in attrs:
+        want_change_pwd = bool(attrs.get("new_password"))
+        if want_change_pwd:
+            current = attrs.get("current_password")
+            if not current:
                 raise serializers.ValidationError({"current_password": "Current password is required to change password."})
-            user = self.context['request'].user
-            if not user.check_password(attrs['current_password']):
-                raise serializers.ValidationError({"current_password": "Current password is incorrect."})
+
+            staff_instance = getattr(self, "instance", None)
+            target_user = getattr(staff_instance, "user", None) if staff_instance else None
+            if target_user is None:
+                raise serializers.ValidationError({"user": "This staff profile is not linked to a user account."})
+
+            if not target_user.check_password(current):
+                req_user = self.context.get("request").user if self.context.get("request") else None
+                if not (req_user and req_user.pk == target_user.pk and req_user.check_password(current)):
+                    raise serializers.ValidationError({"current_password": "Current password is incorrect."})
+
+
         return attrs
 
     def validate_personnel_code(self, value):

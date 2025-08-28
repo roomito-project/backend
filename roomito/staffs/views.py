@@ -9,6 +9,7 @@ from drf_spectacular.utils import extend_schema, OpenApiExample, OpenApiResponse
 from django.core.cache import cache
 from .models import Staff
 from rest_framework.permissions import IsAuthenticated
+from django.contrib.auth import update_session_auth_hash
 from .serializers import (
     StaffRegisterSerializer,
     ErrorResponseSerializer,
@@ -233,21 +234,29 @@ class StaffProfileUpdateView(APIView):
     def patch(self, request):
         user = request.user
         try:
-            staff = user.staff 
+            staff = user.staff
         except Staff.DoesNotExist:
             return Response({"error": "User is not a Staff."}, status=status.HTTP_403_FORBIDDEN)
+
+        if staff.user is None:
+            return Response({"error": "This staff profile is not linked to a user account."},
+                            status=status.HTTP_400_BAD_REQUEST)
 
         serializer = StaffProfileUpdateSerializer(
             instance=staff,
             data=request.data,
             partial=True,
-            context={'request': request} 
+            context={'request': request}
         )
         serializer.is_valid(raise_exception=True)
-        serializer.save()
+        updated_staff = serializer.save()
+
+        if serializer.validated_data.get("new_password"):
+            update_session_auth_hash(request, updated_staff.user)
 
         return Response({"message": "Profile updated successfully."}, status=status.HTTP_200_OK)
-
+    
+    
 @extend_schema(tags=['staff'])
 class StaffProfileView(APIView):
     permission_classes = [IsAuthenticated]

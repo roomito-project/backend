@@ -16,6 +16,7 @@ from .serializers import (
     ManagerSpaceDetailSerializer,
     ManagerSpaceListSerializer,
     ReservationDecisionSerializer,
+    ReservationDetailSerializer,
     ScheduleAvailabilitySerializer,
     SpaceSerializer,
     SpaceUpdateFeatureSerializer,
@@ -1657,3 +1658,94 @@ class ScheduleAvailabilityView(APIView):
 
         serializer = ScheduleAvailabilitySerializer(hours, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
+    
+    
+@extend_schema(tags=['space_manager'])
+class ReservationDetailView(APIView):
+    permission_classes = [IsSpaceManagerUser]
+
+    @extend_schema(
+        parameters=[
+            OpenApiParameter(
+                name="reservation_id",
+                required=True,
+                type=int,
+                location=OpenApiParameter.PATH,
+            )
+        ],
+        responses={
+            200: OpenApiResponse(
+                response=ReservationDetailSerializer,
+                description="Reservation details retrieved successfully.",
+                examples=[
+                    OpenApiExample(
+                        "Success",
+                        value={
+                            "id": 5,
+                            "reservation_type": "event",
+                            "reservee_type": "student",
+                            "reservee_name": "string",
+                            "phone_number": "09123456789",
+                            "description": "string",
+                            "status": "under_review",
+                            "manager_comment": None,
+                            "space": {
+                                "id": 2,
+                                "name": "string",
+                                "capacity": 50,
+                                "address": "string",
+                                "space_type": "hall"
+                            },
+                            "schedule_date": "2025-09-01",
+                            "start_time": "10:00:00",
+                            "end_time": "12:00:00",
+                            "hosting_association": "string",
+                            "hosting_organizations": "string",
+                            "responsible_organizer": "string",
+                            "position": "Professor"
+                        }
+                    )
+                ]
+            ),
+            401: OpenApiResponse(
+                response=ErrorResponseSerializer,
+                description="User not authenticated.",
+                examples=[OpenApiExample("Unauthorized", value={"detail": "Authentication credentials were not provided."})]
+            ),
+            403: OpenApiResponse(
+                response=ErrorResponseSerializer,
+                description="Forbidden – Reservation does not belong to a space managed by this user.",
+                examples=[OpenApiExample("Forbidden", value={"error": "You are not authorized to view this reservation."})]
+            ),
+            404: OpenApiResponse(
+                response=ErrorResponseSerializer,
+                description="Reservation not found.",
+                examples=[OpenApiExample("NotFound", value={"error": "Reservation with this ID does not exist."})]
+            ),
+            500: OpenApiResponse(
+                response=ErrorResponseSerializer,
+                description="Internal server error.",
+                examples=[OpenApiExample("ServerError", value={"error": "An unexpected error occurred."})]
+            ),
+        },
+        description="Retrieve detailed information of a specific reservation by its ID. Only accessible to the space manager of that reservation's space."
+    )
+    def get(self, request, reservation_id):
+        try:
+            reservation = get_object_or_404(Reservation, id=reservation_id)
+
+            if not request.user.is_authenticated or not hasattr(request.user, 'spacemanager'):
+                return Response({"error": "Authentication required."}, status=status.HTTP_401_UNAUTHORIZED)
+
+            if reservation.space.space_manager != request.user.spacemanager:
+                return Response({"error": "You are not authorized to view this reservation."}, status=status.HTTP_403_FORBIDDEN)
+
+            serializer = ReservationDetailSerializer(reservation)
+            return Response(serializer.data, status=status.HTTP_200_OK)
+
+        except Reservation.DoesNotExist:
+            return Response({"error": "Reservation with this ID does not exist."}, status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            print("Unexpected error:", str(e))
+            return Response({"error": "An unexpected error occurred."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    

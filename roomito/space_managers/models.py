@@ -87,8 +87,6 @@ class Schedule(models.Model):
         return f"{self.space.name} - {self.date} - {self.start_hour_code} till {self.end_hour_code}"
 
     def clean(self):
-        if self.start_hour_code.code == self.end_hour_code.code:
-            raise ValidationError("Start and end hour codes cannot be the same.")
         if self.end_hour_code.code < self.start_hour_code.code:
             raise ValidationError("End hour code must be after start hour code.")
 
