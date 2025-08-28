@@ -8,6 +8,10 @@ from staffs.models import Staff
 from students.models import Student
 from drf_spectacular.utils import extend_schema, OpenApiExample, OpenApiResponse
 from .serializers import UnifiedLoginSerializer, TokenResponseSerializer, ErrorResponseSerializer
+from rest_framework.permissions import IsAuthenticated
+from .serializers import MyReservationListSerializer
+from space_managers.models import Reservation
+
 
 @extend_schema(tags=['auth'])
 class UnifiedLoginView(APIView):
@@ -158,3 +162,77 @@ class UnifiedLoginView(APIView):
 
         except Exception:
             return Response({"error": "Invalid credentials."}, status=status.HTTP_401_UNAUTHORIZED)
+
+
+@extend_schema(tags=['reservation'])
+class MyReservationsListView(APIView):
+
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(
+        description="Retrieve all reservation requests created by the authenticated user (student or staff).",
+        responses={
+            200: OpenApiResponse(
+                response=MyReservationListSerializer(many=True),
+                description="List of user's reservations retrieved successfully.",
+                examples=[
+                    OpenApiExample(
+                        'SuccessExample',
+                        value=[
+                            {
+                                "id": 5,
+                                "space_name": "string",
+                                "date": "2025-09-01",
+                                "start_time": "09:00:00",
+                                "end_time": "11:00:00",
+                                "status_display": "Under Review",
+                                "reservation_type": "event",
+                                "description": "string",
+                                "phone_number": "09123456789"
+                            },
+                            {
+                                "id": 6,
+                                "space_name": "string",
+                                "date": "2025-09-02",
+                                "start_time": "14:00:00",
+                                "end_time": "16:00:00",
+                                "status_display": "Approved",
+                                "reservation_type": "class",
+                                "description": "string",
+                                "phone_number": "09351234567"
+                            }
+                        ]
+                    )
+                ]
+            ),
+            401: OpenApiResponse(
+                description="User is not authenticated.",
+                examples=[OpenApiExample('Unauthorized', value={"detail": "Authentication credentials were not provided."})]
+            ),
+            403: OpenApiResponse(
+                description="User is neither student nor staff.",
+                examples=[OpenApiExample('Forbidden', value={"error": "Only students or staff can view their reservations."})]
+            ),
+            500: OpenApiResponse(
+                description="Unexpected server error.",
+                examples=[OpenApiExample('ServerError', value={"error": "An unexpected error occurred."})]
+            ),
+        }
+    )
+    def get(self, request):
+        user = request.user
+
+        if hasattr(user, 'student_profile') and user.student_profile is not None:
+            qs = Reservation.objects.filter(student=user.student_profile)
+        elif hasattr(user, 'staff') and user.staff is not None:
+            qs = Reservation.objects.filter(staff=user.staff)
+        else:
+            return Response({"error": "Only students or staff can view their reservations."},
+                            status=status.HTTP_403_FORBIDDEN)
+
+        qs = qs.select_related(
+            'schedule', 'schedule__start_hour_code', 'schedule__end_hour_code',
+            'space', 'student__user', 'staff'
+        ).order_by('-schedule__date', '-id')
+
+        return Response(MyReservationListSerializer(qs, many=True).data, status=status.HTTP_200_OK)

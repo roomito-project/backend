@@ -1,4 +1,5 @@
 from rest_framework import serializers
+from space_managers.models import Reservation
 
 
 class ErrorResponseSerializer(serializers.Serializer):
@@ -23,3 +24,41 @@ class UnifiedLoginSerializer(serializers.Serializer):
         if not data.get('role') or not data.get('username') or not data.get('password'):
             raise serializers.ValidationError("All fields are required.")
         return data
+
+
+class MyReservationListSerializer(serializers.ModelSerializer):
+    space_name  = serializers.CharField(source='space.name', read_only=True)
+    date        = serializers.DateField(source='schedule.date', read_only=True)
+    start_time  = serializers.SerializerMethodField()
+    end_time    = serializers.SerializerMethodField()
+    status_display = serializers.CharField(source='get_status_display', read_only=True)
+    phone_number   = serializers.CharField(read_only=True)
+
+    class Meta:
+        model = Reservation
+        fields = [
+            'id',
+            'space_name',
+            'date',
+            'start_time',
+            'end_time',
+            'status_display',
+            'reservation_type',
+            'description',
+            'phone_number',
+        ]
+
+    def _parse_time_range(self, time_range_str, pick='start'):
+        if not time_range_str or '-' not in time_range_str:
+            return None
+        parts = time_range_str.split('-')
+        val = parts[0] if pick == 'start' else parts[-1]
+        return f"{val}:00" if len(val) == 5 else val
+
+    def get_start_time(self, obj):
+        slot = getattr(getattr(obj, 'schedule', None), 'start_hour_code', None)
+        return self._parse_time_range(getattr(slot, 'time_range', None), pick='start')
+
+    def get_end_time(self, obj):
+        slot = getattr(getattr(obj, 'schedule', None), 'end_hour_code', None)
+        return self._parse_time_range(getattr(slot, 'time_range', None), pick='end')
