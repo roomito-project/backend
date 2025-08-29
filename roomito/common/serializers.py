@@ -1,4 +1,5 @@
 from rest_framework import serializers
+from space_managers.serializers import SpaceSerializer
 from space_managers.models import Reservation
 
 
@@ -66,10 +67,9 @@ class MyReservationListSerializer(serializers.ModelSerializer):
 
 
 class MyReservationDetailSerializer(serializers.ModelSerializer):
-    space_name      = serializers.CharField(source='space.name', read_only=True)
+    space           = SpaceSerializer(read_only=True) 
     date            = serializers.DateField(source='schedule.date', read_only=True)
-    start_time      = serializers.SerializerMethodField()
-    end_time        = serializers.SerializerMethodField()
+    hour_codes      = serializers.SerializerMethodField()
     status_display  = serializers.CharField(source='get_status_display', read_only=True)
 
     class Meta:
@@ -81,27 +81,21 @@ class MyReservationDetailSerializer(serializers.ModelSerializer):
             'status_display',    
             'phone_number',
             'manager_comment',
-            'space_name',
+            'space',
             'date',
-            'start_time',
-            'end_time',
+            'hour_codes',
             'hosting_association',
             'hosting_organizations',
             'responsible_organizer',
             'position',
         ]
 
-    def _parse_time_range(self, time_range_str, pick='start'):
-        if not time_range_str or '-' not in time_range_str:
-            return None
-        parts = time_range_str.split('-')
-        val = parts[0] if pick == 'start' else parts[-1]
-        return f"{val}:00" if len(val) == 5 else val
-
-    def get_start_time(self, obj):
-        slot = getattr(getattr(obj, 'schedule', None), 'start_hour_code', None)
-        return self._parse_time_range(getattr(slot, 'time_range', None), 'start')
-
-    def get_end_time(self, obj):
-        slot = getattr(getattr(obj, 'schedule', None), 'end_hour_code', None)
-        return self._parse_time_range(getattr(slot, 'time_range', None), 'end')
+    def get_hour_codes(self, obj):
+        sch = getattr(obj, 'schedule', None)
+        if not sch or not sch.start_hour_code or not sch.end_hour_code:
+            return []
+        start = sch.start_hour_code.code
+        end   = sch.end_hour_code.code
+        if start is None or end is None or end < start:
+            return []
+        return list(range(start, end + 1))

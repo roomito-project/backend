@@ -6,11 +6,12 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from django.core.cache import cache
 from staffs.models import Staff
 from students.models import Student
-from drf_spectacular.utils import extend_schema, OpenApiExample, OpenApiResponse
+from drf_spectacular.utils import extend_schema, OpenApiExample, OpenApiResponse, OpenApiParameter
 from .serializers import MyReservationDetailSerializer, UnifiedLoginSerializer, TokenResponseSerializer, ErrorResponseSerializer
 from rest_framework.permissions import IsAuthenticated
 from .serializers import MyReservationListSerializer
 from space_managers.models import Reservation
+from django.shortcuts import get_object_or_404
 
 
 @extend_schema(tags=['auth'])
@@ -239,13 +240,6 @@ class MyReservationsListView(APIView):
 
         return Response(MyReservationListSerializer(qs, many=True).data, status=status.HTTP_200_OK)
     
-    
-from django.shortcuts import get_object_or_404
-from rest_framework.views import APIView
-from rest_framework.permissions import IsAuthenticated
-from rest_framework.response import Response
-from rest_framework import status
-from drf_spectacular.utils import extend_schema, OpenApiParameter, OpenApiResponse, OpenApiExample
 
 @extend_schema(tags=['reservation'])
 class MyReservationDetailView(APIView):
@@ -275,10 +269,14 @@ class MyReservationDetailView(APIView):
                         "status_display": "Rejected",
                         "phone_number": "09123456789",
                         "manager_comment": "string",
-                        "space_name": "string",
                         "date": "2025-09-01",
-                        "start_time": "09:00:00",
-                        "end_time": "11:00:00",
+                        "space": {
+                                "name": "string",
+                                "capacity": 50,
+                                "address": "string",
+                                "space_type": "hall",
+                                "description": "string"
+                            },
                         "hosting_association": "string",
                         "hosting_organizations": "string",
                         "responsible_organizer": "string",

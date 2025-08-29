@@ -609,7 +609,7 @@ class SpaceUpdateSerializer(serializers.ModelSerializer):
 
         instance.save()
         return instance
-from rest_framework import serializers
+
 
 class ReservationDetailSerializer(serializers.ModelSerializer):
     space_name = serializers.CharField(source='space.name', read_only=True)
@@ -618,13 +618,14 @@ class ReservationDetailSerializer(serializers.ModelSerializer):
     end_time   = serializers.SerializerMethodField()
     reservee_name = serializers.SerializerMethodField()
     reservee_type = serializers.CharField(read_only=True)
+    status_display = serializers.CharField(source='get_status_display', read_only=True)
 
     class Meta:
         model = Reservation
         fields = [
             'id', 'reservation_type', 'reservee_type',
             'reservee_name', 'phone_number', 'description',
-            'status', 'manager_comment',
+            'status_display', 'manager_comment',
             'space_name', 'schedule_date', 'start_time', 'end_time',
             'hosting_association', 'hosting_organizations',
             'responsible_organizer', 'position'

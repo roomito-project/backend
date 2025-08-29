@@ -788,19 +788,28 @@ class ReservationCreateView(APIView):
             return Response({"error": f"An unexpected error occurred: {str(e)}"},
                             status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
+        def _parse_time_range(time_range_str, pick='start'):
+            if not time_range_str or '-' not in time_range_str:
+                return None
+            parts = time_range_str.split('-')
+            return parts[0] if pick == 'start' else parts[-1]
+        
         if space.space_manager and space.space_manager.email:
             try:
+                start_time = _parse_time_range(reservation.schedule.start_hour_code.time_range, 'start')
+                end_time   = _parse_time_range(reservation.schedule.end_hour_code.time_range, 'end')
+
                 send_mail(
                     subject='درخواست رزرو جدید',
                     message=(
                         f'درخواستی جدید برای رزرو {space.name} در تاریخ {reservation.schedule.date} '
-                        f'از {reservation.schedule.start_hour_code.time_range} تا '
-                        f'{reservation.schedule.end_hour_code.time_range} ثبت شده است.'
+                        f'از ساعت {start_time} تا {end_time} ثبت شده است.'
                     ),
                     from_email="mahyajfri37@gmail.com",
                     recipient_list=[space.space_manager.email],
                     fail_silently=True,
                 )
+
             except Exception as e:
                 return Response({"error": f"Failed to send reservation request to space manager: {str(e)}"},
                                 status=status.HTTP_500_INTERNAL_SERVER_ERROR)
