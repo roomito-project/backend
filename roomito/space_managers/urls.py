@@ -36,6 +36,6 @@ urlpatterns = [
     path('spacemanager/<int:space_id>/updateSpace/', ManagerSpaceUpdateView.as_view(), name="update-space"),
     path('schedules/availability/', ScheduleAvailabilityView.as_view(), name='schedule-availability'),
     path('spacemanager/<int:reservation_id>/decision/',ReservationDecisionView.as_view(), name='reservations-desicion'),
-    path("api/spacemanager/<int:reservation_id>/", ReservationDetailView.as_view(), name="reservation-detail"),
-    path("api/spacemanager/<int:space_id>/delete/", ManagerSpaceDeleteView.as_view(), name="space-delete"),
+    path("spacemanager/reservations/<int:reservation_id>/", ReservationDetailView.as_view(), name="reservation-detail"),
+    path("spacemanager/<int:space_id>/delete/", ManagerSpaceDeleteView.as_view(), name="space-delete"),
     ]

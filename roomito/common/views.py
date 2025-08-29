@@ -7,7 +7,7 @@ from django.core.cache import cache
 from staffs.models import Staff
 from students.models import Student
 from drf_spectacular.utils import extend_schema, OpenApiExample, OpenApiResponse
-from .serializers import UnifiedLoginSerializer, TokenResponseSerializer, ErrorResponseSerializer
+from .serializers import MyReservationDetailSerializer, UnifiedLoginSerializer, TokenResponseSerializer, ErrorResponseSerializer
 from rest_framework.permissions import IsAuthenticated
 from .serializers import MyReservationListSerializer
 from space_managers.models import Reservation
@@ -186,6 +186,7 @@ class MyReservationsListView(APIView):
                                 "start_time": "09:00:00",
                                 "end_time": "11:00:00",
                                 "status_display": "Under Review",
+                                "manager_comment": "string",
                                 "reservation_type": "event",
                                 "description": "string",
                                 "phone_number": "09123456789"
@@ -197,6 +198,7 @@ class MyReservationsListView(APIView):
                                 "start_time": "14:00:00",
                                 "end_time": "16:00:00",
                                 "status_display": "Approved",
+                                "manager_comment": "string",
                                 "reservation_type": "class",
                                 "description": "string",
                                 "phone_number": "09351234567"
@@ -236,3 +238,98 @@ class MyReservationsListView(APIView):
         ).order_by('-schedule__date', '-id')
 
         return Response(MyReservationListSerializer(qs, many=True).data, status=status.HTTP_200_OK)
+    
+    
+from django.shortcuts import get_object_or_404
+from rest_framework.views import APIView
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
+from rest_framework import status
+from drf_spectacular.utils import extend_schema, OpenApiParameter, OpenApiResponse, OpenApiExample
+
+@extend_schema(tags=['reservation'])
+class MyReservationDetailView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(
+        description="Retrieve a single reservation (only if it belongs to the authenticated user).",
+        parameters=[
+            OpenApiParameter(
+                name="reservation_id",
+                required=True,
+                type=int,
+                location=OpenApiParameter.PATH,
+                description="Reservation ID"
+            )
+        ],
+        responses={
+            200: OpenApiResponse(
+                response=MyReservationDetailSerializer,
+                description="Reservation retrieved successfully.",
+                examples=[OpenApiExample(
+                    "Success",
+                    value={
+                        "id": 2,
+                        "reservation_type": "event",
+                        "description": "string",
+                        "status_display": "Rejected",
+                        "phone_number": "09123456789",
+                        "manager_comment": "string",
+                        "space_name": "string",
+                        "date": "2025-09-01",
+                        "start_time": "09:00:00",
+                        "end_time": "11:00:00",
+                        "hosting_association": "string",
+                        "hosting_organizations": "string",
+                        "responsible_organizer": "string",
+                        "position": "Professor"
+                    }
+                )]
+            ),
+            401: OpenApiResponse(
+                description="Not authenticated.",
+                examples=[OpenApiExample("Unauthorized", value={"detail": "Authentication credentials were not provided."})]
+            ),
+            403: OpenApiResponse(
+                description="Reservation does not belong to the user.",
+                examples=[OpenApiExample("Forbidden", value={"error": "You are not authorized to view this reservation."})]
+            ),
+            404: OpenApiResponse(
+                description="Reservation not found.",
+                examples=[OpenApiExample("NotFound", value={"error": "Reservation with this ID does not exist."})]
+            ),
+            500: OpenApiResponse(
+                description="Unexpected server error.",
+                examples=[OpenApiExample("ServerError", value={"error": "An unexpected error occurred."})]
+            ),
+        }
+    )
+    def get(self, request, reservation_id):
+        try:
+            reservation = get_object_or_404(
+                Reservation.objects.select_related(
+                    'schedule', 'schedule__start_hour_code', 'schedule__end_hour_code',
+                    'space', 'student__user', 'staff'
+                ),
+                id=reservation_id
+            )
+
+            user = request.user
+            is_owner = (
+                (hasattr(user, 'student_profile') and reservation.student_id == getattr(user.student_profile, 'id', None)) or
+                (hasattr(user, 'staff') and reservation.staff_id == getattr(user.staff, 'id', None))
+            )
+            if not is_owner:
+                return Response({"error": "You are not authorized to view this reservation."},
+                                status=status.HTTP_403_FORBIDDEN)
+
+            data = MyReservationDetailSerializer(reservation).data
+            return Response(data, status=status.HTTP_200_OK)
+
+        except Reservation.DoesNotExist:
+            return Response({"error": "Reservation with this ID does not exist."},
+                            status=status.HTTP_404_NOT_FOUND)
+        except Exception:
+            return Response({"error": "An unexpected error occurred."},
+                            status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    

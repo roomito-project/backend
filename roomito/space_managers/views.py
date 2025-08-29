@@ -1690,13 +1690,7 @@ class ReservationDetailView(APIView):
                             "description": "string",
                             "status": "under_review",
                             "manager_comment": None,
-                            "space": {
-                                "id": 2,
-                                "name": "string",
-                                "capacity": 50,
-                                "address": "string",
-                                "space_type": "hall"
-                            },
+                            "space_name": "string",
                             "schedule_date": "2025-09-01",
                             "start_time": "10:00:00",
                             "end_time": "12:00:00",

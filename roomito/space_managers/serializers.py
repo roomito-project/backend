@@ -609,15 +609,15 @@ class SpaceUpdateSerializer(serializers.ModelSerializer):
 
         instance.save()
         return instance
-
+from rest_framework import serializers
 
 class ReservationDetailSerializer(serializers.ModelSerializer):
-    space = SpaceSerializer(read_only=True)
+    space_name = serializers.CharField(source='space.name', read_only=True)
     schedule_date = serializers.DateField(source='schedule.date', read_only=True)
-    start_time = serializers.TimeField(source='schedule.start_hour_code.time_range', read_only=True)
-    end_time = serializers.TimeField(source='schedule.end_hour_code.time_range', read_only=True)
+    start_time = serializers.SerializerMethodField()
+    end_time   = serializers.SerializerMethodField()
     reservee_name = serializers.SerializerMethodField()
-    reservee_type = serializers.CharField( read_only=True)
+    reservee_type = serializers.CharField(read_only=True)
 
     class Meta:
         model = Reservation
@@ -625,13 +625,28 @@ class ReservationDetailSerializer(serializers.ModelSerializer):
             'id', 'reservation_type', 'reservee_type',
             'reservee_name', 'phone_number', 'description',
             'status', 'manager_comment',
-            'space', 'schedule_date', 'start_time', 'end_time',
+            'space_name', 'schedule_date', 'start_time', 'end_time',
             'hosting_association', 'hosting_organizations',
             'responsible_organizer', 'position'
         ]
 
+    def _parse_time_range(self, time_range_str, pick='start'):
+        if not time_range_str or '-' not in time_range_str:
+            return None
+        parts = time_range_str.split('-')
+        val = parts[0] if pick == 'start' else parts[-1]
+        return f"{val}:00" if len(val) == 5 else val
+
+    def get_start_time(self, obj):
+        slot = getattr(getattr(obj, 'schedule', None), 'start_hour_code', None)
+        return self._parse_time_range(getattr(slot, 'time_range', None), pick='start')
+
+    def get_end_time(self, obj):
+        slot = getattr(getattr(obj, 'schedule', None), 'end_hour_code', None)
+        return self._parse_time_range(getattr(slot, 'time_range', None), pick='end')
+
     def get_reservee_name(self, obj):
-        if obj.student and obj.student.user:
+        if obj.student and getattr(obj.student, 'user', None):
             return f"{obj.student.user.first_name} {obj.student.user.last_name}"
         elif obj.staff:
             return f"{obj.staff.first_name} {obj.staff.last_name}"
