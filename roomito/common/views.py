@@ -207,6 +207,10 @@ class MyReservationsListView(APIView):
                                 "phone_number": "09351234567"
                             }
                         ]
+                    ),
+                    OpenApiExample(
+                        'EmptyList',
+                        value={"message": "You have no reservations."}
                     )
                 ]
             ),
@@ -243,6 +247,9 @@ class MyReservationsListView(APIView):
             'space', 'student__user', 'staff'
         ).order_by('-schedule__date', '-id')
 
+        if not qs.exists():
+            return Response({"message": "You have no reservations."}, status=status.HTTP_200_OK)
+        
         return Response(MyReservationListSerializer(qs, many=True).data, status=status.HTTP_200_OK)
     
 
@@ -312,34 +319,33 @@ class MyReservationDetailView(APIView):
         }
     )
     def get(self, request, reservation_id):
+        user = request.user
+        student_id = getattr(getattr(user, 'student_profile', None), 'id', None)
+        staff_id   = getattr(getattr(user, 'staff', None), 'id', None)
+
         try:
-            reservation = get_object_or_404(
-                Reservation.objects.select_related(
-                    'schedule', 'schedule__start_hour_code', 'schedule__end_hour_code',
-                    'space', 'student__user', 'staff'
-                ),
-                id=reservation_id
+            reservation = (
+                Reservation.objects
+                .select_related('schedule', 'schedule__start_hour_code', 'schedule__end_hour_code',
+                                'space', 'student__user', 'staff')
+                .filter(id=reservation_id)
+                .filter(
+                    Q(student_id=student_id) | Q(staff_id=staff_id)
+                )
+                .first()
             )
 
-            user = request.user
-            is_owner = (
-                (hasattr(user, 'student_profile') and reservation.student_id == getattr(user.student_profile, 'id', None)) or
-                (hasattr(user, 'staff') and reservation.staff_id == getattr(user.staff, 'id', None))
-            )
-            if not is_owner:
-                return Response({"error": "You are not authorized to view this reservation."},
-                                status=status.HTTP_403_FORBIDDEN)
+            if reservation is None:
+                return Response({"error": "Reservation with this ID does not exist."},
+                                status=status.HTTP_404_NOT_FOUND)
 
             data = MyReservationDetailSerializer(reservation).data
             return Response(data, status=status.HTTP_200_OK)
 
-        except Reservation.DoesNotExist:
-            return Response({"error": "Reservation with this ID does not exist."},
-                            status=status.HTTP_404_NOT_FOUND)
         except Exception:
             return Response({"error": "An unexpected error occurred."},
                             status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
+            
 
 @extend_schema(tags=['reservation'])
 class MyReservationDeleteView(APIView):
@@ -419,7 +425,7 @@ class MyEventsListView(APIView):
     permission_classes = [IsAuthenticated]
 
     @extend_schema(
-        description="List events organized by the authenticated user (student or staff). Returns space name only.",
+        description="List events organized by the authenticated user (student or staff).",
         responses={
             200: OpenApiResponse(
                 response=MyEventListSerializer(many=True),
@@ -437,7 +443,11 @@ class MyEventsListView(APIView):
                         "start_time": "10:00:00",
                         "end_time": "12:00:00"
                     }]
-                )]
+                ),
+                    OpenApiExample(
+                        "EmptyList",
+                        value={"message": "You have no events."}
+                    )]
             ),
             401: OpenApiResponse(
                 response=ErrorResponseSerializer,
@@ -466,6 +476,9 @@ class MyEventsListView(APIView):
                 Q(student_organizer=student) | Q(staff_organizer=staff)
             ).select_related('space', 'schedule__start_hour_code', 'schedule__end_hour_code')
 
+            if not events.exists():
+                return Response({"message": "You have no events."}, status=status.HTTP_200_OK)
+            
             serializer = MyEventListSerializer(events, many=True)
             return Response(serializer.data, status=status.HTTP_200_OK)
 
@@ -482,7 +495,7 @@ class MyEventDetailView(APIView):
     permission_classes = [IsAuthenticated]
 
     @extend_schema(
-        description="Retrieve an event details owned by the authenticated user (organizer must match).",
+        description="Retrieve an event details owned by the authenticated user",
         parameters=[
             OpenApiParameter(
                 name="event_id",
@@ -550,34 +563,30 @@ class MyEventDetailView(APIView):
         }
     )
     def get(self, request, event_id):
-        try:
-            event = get_object_or_404(
-                Event.objects.select_related(
-                    'space',
-                    'schedule', 'schedule__start_hour_code', 'schedule__end_hour_code',
-                    'student_organizer__user', 'staff_organizer'
-                ).prefetch_related(
-                    'space__features', 'space__images'
-                ),
-                id=event_id
-            )
+        user = request.user
+        student = getattr(user, 'student_profile', None)
+        staff   = getattr(user, 'staff', None)
 
-            user = request.user
-            student = getattr(user, 'student_profile', None)
-            staff   = getattr(user, 'staff', None)
+        if not student and not staff:
+            return Response({"error": "Only students or staff can view their events."},
+                            status=status.HTTP_403_FORBIDDEN)
 
-            is_owner = (
-                (event.organizer == 'student' and student and event.student_organizer_id == student.id) or
-                (event.organizer == 'staff'   and staff   and event.staff_organizer_id   == staff.id)
-            )
-            if not is_owner:
-                return Response({"error": "You are not authorized to view this event."},
-                                status=status.HTTP_403_FORBIDDEN)
+        qs = Event.objects.select_related(
+            'space',
+            'schedule', 'schedule__start_hour_code', 'schedule__end_hour_code',
+            'student_organizer__user', 'staff_organizer'
+        ).prefetch_related(
+            'space__features', 'space__images'
+        )
 
-            return Response(EventDetailSerializer(event).data, status=status.HTTP_200_OK)
+        if student:
+            qs = qs.filter(organizer='student', student_organizer=student)
+        else:
+            qs = qs.filter(organizer='staff', staff_organizer=staff)
 
-        except Event.DoesNotExist:
-            return Response({"error": "Event with this ID does not exist."}, status=status.HTTP_404_NOT_FOUND)
-        except Exception:
-            return Response({"error": "An unexpected error occurred."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-        
+        event = qs.filter(id=event_id).first()
+        if event is None:
+            return Response({"error": "Event with this ID does not exist."},
+                            status=status.HTTP_404_NOT_FOUND)
+
+        return Response(EventDetailSerializer(event).data, status=status.HTTP_200_OK)
