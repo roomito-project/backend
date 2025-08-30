@@ -7,11 +7,13 @@ from django.core.cache import cache
 from staffs.models import Staff
 from students.models import Student
 from drf_spectacular.utils import extend_schema, OpenApiExample, OpenApiResponse, OpenApiParameter
-from .serializers import MyReservationDetailSerializer, UnifiedLoginSerializer, TokenResponseSerializer, ErrorResponseSerializer
+from .serializers import MyReservationDetailSerializer, SuccessResponseSerializer, UnifiedLoginSerializer, TokenResponseSerializer, ErrorResponseSerializer
 from rest_framework.permissions import IsAuthenticated
 from .serializers import MyReservationListSerializer
-from space_managers.models import Reservation
+from space_managers.models import Reservation, Event
 from django.shortcuts import get_object_or_404
+from django.db import transaction
+from django.db.models import Q
 
 
 @extend_schema(tags=['auth'])
@@ -209,14 +211,17 @@ class MyReservationsListView(APIView):
                 ]
             ),
             401: OpenApiResponse(
+                response=ErrorResponseSerializer,
                 description="User is not authenticated.",
                 examples=[OpenApiExample('Unauthorized', value={"detail": "Authentication credentials were not provided."})]
             ),
             403: OpenApiResponse(
+                response=ErrorResponseSerializer,
                 description="User is neither student nor staff.",
                 examples=[OpenApiExample('Forbidden', value={"error": "Only students or staff can view their reservations."})]
             ),
             500: OpenApiResponse(
+                response=ErrorResponseSerializer,
                 description="Unexpected server error.",
                 examples=[OpenApiExample('ServerError', value={"error": "An unexpected error occurred."})]
             ),
@@ -285,18 +290,22 @@ class MyReservationDetailView(APIView):
                 )]
             ),
             401: OpenApiResponse(
+                response=ErrorResponseSerializer,
                 description="Not authenticated.",
                 examples=[OpenApiExample("Unauthorized", value={"detail": "Authentication credentials were not provided."})]
             ),
             403: OpenApiResponse(
+                response=ErrorResponseSerializer,
                 description="Reservation does not belong to the user.",
                 examples=[OpenApiExample("Forbidden", value={"error": "You are not authorized to view this reservation."})]
             ),
             404: OpenApiResponse(
+                response=ErrorResponseSerializer,
                 description="Reservation not found.",
                 examples=[OpenApiExample("NotFound", value={"error": "Reservation with this ID does not exist."})]
             ),
             500: OpenApiResponse(
+                response=ErrorResponseSerializer,
                 description="Unexpected server error.",
                 examples=[OpenApiExample("ServerError", value={"error": "An unexpected error occurred."})]
             ),
@@ -330,4 +339,76 @@ class MyReservationDetailView(APIView):
         except Exception:
             return Response({"error": "An unexpected error occurred."},
                             status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-    
+
+
+@extend_schema(tags=['reservation'])
+class MyReservationDeleteView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(
+        description=(
+            "Delete a reservation created by the authenticated user (student or staff). "
+        ),
+        parameters=[
+            OpenApiParameter(
+                name="reservation_id",
+                required=True,
+                type=int,
+                location=OpenApiParameter.PATH,
+                description="ID of the reservation to delete"
+            ),
+        ],
+        responses={
+            200: OpenApiResponse(
+                response=SuccessResponseSerializer,
+                description="Reservation deleted successfully.",
+                examples=[OpenApiExample("Deleted", value={"message": "Reservation deleted successfully."})]
+            ),
+            401: OpenApiResponse(
+                response=ErrorResponseSerializer,
+                description="User is not authenticated.",
+                examples=[OpenApiExample("Unauthorized", value={"detail": "Authentication credentials were not provided."})]
+            ),
+            403: OpenApiResponse(
+                response=ErrorResponseSerializer,
+                description="Reservation does not belong to the user.",
+                examples=[OpenApiExample("Forbidden", value={"error": "You are not authorized to delete this reservation."})]
+            ),
+            404: OpenApiResponse(
+                response=ErrorResponseSerializer,
+                description="Reservation not found.",
+                examples=[OpenApiExample("NotFound", value={"error": "Reservation with this ID does not exist."})]
+            ),
+            500: OpenApiResponse(
+                response=ErrorResponseSerializer,
+                description="Unexpected server error.",
+                examples=[OpenApiExample("ServerError", value={"error": "An unexpected error occurred."})]
+            ),
+        }
+    )
+    def delete(self, request, reservation_id):
+        user = request.user
+        student_id = getattr(getattr(user, 'student_profile', None), 'id', None)
+        staff_id   = getattr(getattr(user, 'staff', None), 'id', None)
+
+        reservation = Reservation.objects.filter(
+            Q(student_id=student_id) | Q(staff_id=staff_id),
+            id=reservation_id
+        ).select_related('schedule').first()
+
+        if reservation is None:
+            return Response({"error": "Reservation with this ID does not exist."},
+                            status=status.HTTP_404_NOT_FOUND)
+
+        try:
+            with transaction.atomic():
+                sch = reservation.schedule
+                if sch:
+                    Event.objects.filter(schedule=sch).delete()
+
+                reservation.delete()
+
+            return Response({"message": "Reservation deleted successfully."}, status=200)
+
+        except Exception:
+            return Response({"error": "An unexpected error occurred."}, status=500)
