@@ -1,6 +1,6 @@
 from rest_framework import serializers
 from space_managers.serializers import SpaceSerializer
-from space_managers.models import Reservation
+from space_managers.models import Event, Reservation
 
 
 class ErrorResponseSerializer(serializers.Serializer):
@@ -99,3 +99,63 @@ class MyReservationDetailSerializer(serializers.ModelSerializer):
         if start is None or end is None or end < start:
             return []
         return list(range(start, end + 1))
+
+
+class MyEventListSerializer(serializers.ModelSerializer):
+    space_name  = serializers.CharField(source='space.name', read_only=True)
+    date        = serializers.DateField(source='schedule.date', read_only=True)
+    start_time  = serializers.SerializerMethodField()
+    end_time    = serializers.SerializerMethodField()
+    poster      = serializers.ImageField(read_only=True)
+
+    class Meta:
+        model = Event
+        fields = [
+            'id', 'title', 'event_type', 'description',
+            'poster', 'space_name', 'date', 'start_time', 'end_time'
+        ]
+
+    def _parse_time_range(self, time_range_str, pick='start'):
+        if not time_range_str or '-' not in time_range_str:
+            return None
+        part = time_range_str.split('-')[0 if pick=='start' else -1]
+        return f"{part}:00" if len(part) == 5 else part
+
+    def get_start_time(self, obj):
+        slot = getattr(getattr(obj, 'schedule', None), 'start_hour_code', None)
+        return self._parse_time_range(getattr(slot, 'time_range', None), 'start')
+
+    def get_end_time(self, obj):
+        slot = getattr(getattr(obj, 'schedule', None), 'end_hour_code', None)
+        return self._parse_time_range(getattr(slot, 'time_range', None), 'end')
+
+
+class EventDetailSerializer(serializers.ModelSerializer):
+    space       = SpaceSerializer(read_only=True)              
+    date        = serializers.DateField(source='schedule.date', read_only=True)
+    start_time  = serializers.SerializerMethodField()
+    end_time    = serializers.SerializerMethodField()
+    organizer_display = serializers.CharField(source='get_organizer_display', read_only=True)
+    poster      = serializers.ImageField(read_only=True)
+
+    class Meta:
+        model = Event
+        fields = [
+            'id', 'title', 'event_type', 'description',
+            'poster', 'organizer', 'organizer_display',
+            'space', 'date', 'start_time', 'end_time'
+        ]
+
+    def _parse_time_range(self, time_range_str, pick='start'):
+        if not time_range_str or '-' not in time_range_str:
+            return None
+        part = time_range_str.split('-')[0 if pick=='start' else -1]
+        return f"{part}:00" if len(part) == 5 else part
+
+    def get_start_time(self, obj):
+        slot = getattr(getattr(obj, 'schedule', None), 'start_hour_code', None)
+        return self._parse_time_range(getattr(slot, 'time_range', None), 'start')
+
+    def get_end_time(self, obj):
+        slot = getattr(getattr(obj, 'schedule', None), 'end_hour_code', None)
+        return self._parse_time_range(getattr(slot, 'time_range', None), 'end')

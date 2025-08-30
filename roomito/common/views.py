@@ -7,7 +7,7 @@ from django.core.cache import cache
 from staffs.models import Staff
 from students.models import Student
 from drf_spectacular.utils import extend_schema, OpenApiExample, OpenApiResponse, OpenApiParameter
-from .serializers import MyReservationDetailSerializer, SuccessResponseSerializer, UnifiedLoginSerializer, TokenResponseSerializer, ErrorResponseSerializer
+from .serializers import EventDetailSerializer, MyEventListSerializer, MyReservationDetailSerializer, SuccessResponseSerializer, UnifiedLoginSerializer, TokenResponseSerializer, ErrorResponseSerializer
 from rest_framework.permissions import IsAuthenticated
 from .serializers import MyReservationListSerializer
 from space_managers.models import Reservation, Event
@@ -412,3 +412,172 @@ class MyReservationDeleteView(APIView):
 
         except Exception:
             return Response({"error": "An unexpected error occurred."}, status=500)
+        
+
+@extend_schema(tags=['event'])
+class MyEventsListView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(
+        description="List events organized by the authenticated user (student or staff). Returns space name only.",
+        responses={
+            200: OpenApiResponse(
+                response=MyEventListSerializer(many=True),
+                description="My events retrieved successfully.",
+                examples=[OpenApiExample(
+                    "Success",
+                    value=[{
+                        "id": 10,
+                        "title": "string",
+                        "event_type": "event",
+                        "description": "string",
+                        "poster": "/media/event_posters/10.jpg",
+                        "space_name": "string",
+                        "date": "2025-09-05",
+                        "start_time": "10:00:00",
+                        "end_time": "12:00:00"
+                    }]
+                )]
+            ),
+            401: OpenApiResponse(
+                response=ErrorResponseSerializer,
+                description="Not authenticated.",
+                examples=[OpenApiExample(
+                    "Unauthorized", value={"detail": "Authentication credentials were not provided."})]),
+            403: OpenApiResponse(
+                response=ErrorResponseSerializer,
+                description="Not a student/staff.",
+                examples=[OpenApiExample(
+                    "Forbidden", value={"error": "Only students or staff can view their events."})]),
+            500: OpenApiResponse(
+                response=ErrorResponseSerializer,
+                description="Server error.",
+                examples=[OpenApiExample(
+                    "ServerError", value={"error": "An unexpected error occurred."})]),
+        }
+    )
+    def get(self, request):
+        try:
+            user = request.user
+            student = getattr(user, 'student_profile', None)
+            staff   = getattr(user, 'staff', None)
+
+            events = Event.objects.filter(
+                Q(student_organizer=student) | Q(staff_organizer=staff)
+            ).select_related('space', 'schedule__start_hour_code', 'schedule__end_hour_code')
+
+            serializer = MyEventListSerializer(events, many=True)
+            return Response(serializer.data, status=status.HTTP_200_OK)
+
+        except Exception:
+            return Response(
+                {"error": "An unexpected error occurred."},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+
+@extend_schema(tags=['event'])
+class MyEventDetailView(APIView):
+ 
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(
+        description="Retrieve an event details owned by the authenticated user (organizer must match).",
+        parameters=[
+            OpenApiParameter(
+                name="event_id",
+                required=True,
+                type=int,
+                location=OpenApiParameter.PATH,
+                description="Event ID"
+            )
+        ],
+        responses={
+            200: OpenApiResponse(
+                response=EventDetailSerializer,
+                description="Event details retrieved successfully.",
+                examples=[OpenApiExample(
+                    "Success",
+                    value={
+                        "id": 11,
+                        "title": "string",
+                        "event_type": "class",
+                        "description": "string",
+                        "poster": None,
+                        "organizer": "staff",
+                        "organizer_display": "Staff",
+                        "space": {
+                            "id": 2,
+                            "space_type": "class",
+                            "name": "string",
+                            "address": "string",
+                            "capacity": 40,
+                            "phone_number": "09123456789",
+                            "description": "string",
+                            "features": [{"id": 1, "name": "Projector"}],
+                            "images": [{"id": 5, "url": "/media/space_photos/5.jpg"}]
+                        },
+                        "date": "2025-09-07",
+                        "start_time": "14:00:00",
+                        "end_time": "16:00:00"
+                    }
+                )]
+            ),
+            401: OpenApiResponse(
+                response=ErrorResponseSerializer,
+                description="Not authenticated.",
+                examples=[OpenApiExample(
+                    "Unauthorized", value={"detail": "Authentication credentials were not provided."})]
+            ),
+            403: OpenApiResponse(
+                response=ErrorResponseSerializer,
+                description="Event is not owned by the user.",
+                examples=[OpenApiExample(
+                    "Forbidden", value={"error": "You are not authorized to view this event."})]
+            ),
+            404: OpenApiResponse(
+                response=ErrorResponseSerializer,
+                description="Event not found.",
+                examples=[OpenApiExample(
+                    "NotFound", value={"error": "Event with this ID does not exist."})]
+            ),
+            500: OpenApiResponse(
+                response=ErrorResponseSerializer,
+                description="Unexpected server error.",
+                examples=[OpenApiExample(
+                    "ServerError", value={"error": "An unexpected error occurred."})]
+            ),
+        }
+    )
+    def get(self, request, event_id):
+        try:
+            event = get_object_or_404(
+                Event.objects.select_related(
+                    'space',
+                    'schedule', 'schedule__start_hour_code', 'schedule__end_hour_code',
+                    'student_organizer__user', 'staff_organizer'
+                ).prefetch_related(
+                    'space__features', 'space__images'
+                ),
+                id=event_id
+            )
+
+            user = request.user
+            student = getattr(user, 'student_profile', None)
+            staff   = getattr(user, 'staff', None)
+
+            is_owner = (
+                (event.organizer == 'student' and student and event.student_organizer_id == student.id) or
+                (event.organizer == 'staff'   and staff   and event.staff_organizer_id   == staff.id)
+            )
+            if not is_owner:
+                return Response({"error": "You are not authorized to view this event."},
+                                status=status.HTTP_403_FORBIDDEN)
+
+            return Response(EventDetailSerializer(event).data, status=status.HTTP_200_OK)
+
+        except Event.DoesNotExist:
+            return Response({"error": "Event with this ID does not exist."}, status=status.HTTP_404_NOT_FOUND)
+        except Exception:
+            return Response({"error": "An unexpected error occurred."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        
