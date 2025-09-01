@@ -1,6 +1,7 @@
 from rest_framework import serializers
 from space_managers.serializers import SpaceSerializer
-from space_managers.models import Event, Reservation
+from space_managers.models import Event, HourSlot, Reservation, Schedule, Space
+from django.core.exceptions import ValidationError as DjangoValidationError
 
 
 class ErrorResponseSerializer(serializers.Serializer):
@@ -159,3 +160,84 @@ class EventDetailSerializer(serializers.ModelSerializer):
     def get_end_time(self, obj):
         slot = getattr(getattr(obj, 'schedule', None), 'end_hour_code', None)
         return self._parse_time_range(getattr(slot, 'time_range', None), 'end')
+
+
+class ScheduleUpdateSerializer(serializers.Serializer):
+    hour_codes = serializers.ListField(
+        child=serializers.PrimaryKeyRelatedField(queryset=HourSlot.objects.all()),
+        required=False, min_length=1, max_length=12
+    )
+    date = serializers.DateField(required=False)
+
+    def validate(self, data):
+        if 'hour_codes' in data:
+            codes = [hc.code for hc in data['hour_codes']]
+            if len(codes) != len(set(codes)):
+                raise serializers.ValidationError({"hour_codes": ["Duplicate hour codes are not allowed."]})
+            if codes != sorted(codes):
+                raise serializers.ValidationError({"hour_codes": ["Hour codes must be in ascending order."]})
+            if (max(codes) - min(codes) + 1) != len(codes):
+                raise serializers.ValidationError({"hour_codes": ["Hour codes must be consecutive."]})
+        return data
+
+
+class ReservationUpdateSerializer(serializers.ModelSerializer):
+    phone_number = serializers.CharField(required=False, allow_blank=True, min_length=11, max_length=11)
+    schedule = ScheduleUpdateSerializer(required=False)
+    space_name = serializers.CharField(write_only=True, required=False)
+ 
+    class Meta:
+        model = Reservation
+        fields = [
+            'reservation_type', 'phone_number', 'description',
+            'space_name', 'hosting_association', 'hosting_organizations',
+            'responsible_organizer', 'position', 'schedule',
+        ]
+
+    def validate_phone_number(self, v):
+        if v and not v.isdigit():
+            raise serializers.ValidationError("Phone number must be exactly 11 digits.")
+        return v
+
+    def validate_space_name(self, value):
+        try:
+            space = Space.objects.get(name=value)
+        except Space.DoesNotExist:
+            raise serializers.ValidationError(f"Space with name '{value}' does not exist.")
+        return space
+    
+    def update(self, instance: Reservation, validated_data):
+        space = validated_data.pop("space_name", None)
+        if space:
+            instance.space = space
+
+        for f in ('reservation_type', 'phone_number', 'description',
+                  'hosting_association', 'hosting_organizations',
+                  'responsible_organizer', 'position'):
+            if f in validated_data:
+                setattr(instance, f, validated_data[f])
+
+        sched_data = validated_data.get('schedule')
+        if sched_data:
+            sched: Schedule = instance.schedule
+            if not sched:
+                raise serializers.ValidationError({"schedule": ["This reservation has no schedule to update."]})
+
+            if 'date' in sched_data:
+                sched.date = sched_data['date']
+
+            if 'hour_codes' in sched_data:
+                hour_objs = sched_data['hour_codes']
+                start_obj = min(hour_objs, key=lambda x: x.code)
+                end_obj   = max(hour_objs, key=lambda x: x.code)
+                sched.start_hour_code = start_obj
+                sched.end_hour_code   = end_obj
+
+            try:
+                sched.full_clean()
+                sched.save()
+            except DjangoValidationError as e:
+                raise e
+
+        instance.save()
+        return instance

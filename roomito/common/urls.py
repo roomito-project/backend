@@ -1,5 +1,13 @@
 from django.urls import path
-from .views import MyReservationsListView, UnifiedLoginView, MyReservationDetailView, MyReservationDeleteView,MyEventDetailView,MyEventsListView
+from .views import (
+    MyReservationsListView, 
+    UnifiedLoginView, 
+    MyReservationDetailView, 
+    MyReservationDeleteView,
+    MyEventDetailView,
+    MyEventsListView,
+    MyReservationUpdateView
+)
 
 urlpatterns = [
     path('login/', UnifiedLoginView.as_view(), name='unified-login'),
@@ -8,4 +16,5 @@ urlpatterns = [
     path("myreservations/<int:reservation_id>/delete", MyReservationDeleteView.as_view(), name="my-reservation-delete"),
     path("myevents/", MyEventsListView.as_view(), name="my-events"),
     path("myevents/<int:event_id>/", MyEventDetailView.as_view(), name="my-event"),
+    path("myreservations/<int:reservation_id>/update", MyReservationUpdateView.as_view(), name="my-reservation-update"),
 ]

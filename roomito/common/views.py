@@ -7,13 +7,14 @@ from django.core.cache import cache
 from staffs.models import Staff
 from students.models import Student
 from drf_spectacular.utils import extend_schema, OpenApiExample, OpenApiResponse, OpenApiParameter
-from .serializers import EventDetailSerializer, MyEventListSerializer, MyReservationDetailSerializer, SuccessResponseSerializer, UnifiedLoginSerializer, TokenResponseSerializer, ErrorResponseSerializer
+from .serializers import EventDetailSerializer, MyEventListSerializer, MyReservationDetailSerializer, ReservationUpdateSerializer, SuccessResponseSerializer, UnifiedLoginSerializer, TokenResponseSerializer, ErrorResponseSerializer
 from rest_framework.permissions import IsAuthenticated
 from .serializers import MyReservationListSerializer
 from space_managers.models import Reservation, Event
 from django.shortcuts import get_object_or_404
 from django.db import transaction
 from django.db.models import Q
+from django.core.exceptions import ValidationError as DjangoValidationError
 
 
 @extend_schema(tags=['auth'])
@@ -420,6 +421,99 @@ class MyReservationDeleteView(APIView):
             return Response({"error": "An unexpected error occurred."}, status=500)
         
 
+@extend_schema(tags=['reservation'])
+class MyReservationUpdateView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(
+        description="Update a reservation created by the authenticated user. Allowed only while status is 'under_review'.",
+        parameters=[
+                    OpenApiParameter(
+                        name="reservation_id",
+                        required=True,
+                        type=int,
+                        location=OpenApiParameter.PATH,
+                        description="ID of the reservation to edit"
+                    ),
+                ],
+        request=ReservationUpdateSerializer,
+        responses={
+            200: OpenApiResponse(
+                response=SuccessResponseSerializer,
+                description="Reservation updated successfully.",
+                examples=[OpenApiExample("Success", value={"message": "Reservation updated successfully."})]
+            ),
+            400: OpenApiResponse(
+                response=ErrorResponseSerializer,
+                description="Validation error or not editable.",
+                examples=[
+                    OpenApiExample("NotEditable", value={"error": "Reservation is not editable."}),
+                    OpenApiExample("BadPhone", value={"phone_number": ["Phone number must be exactly 11 digits."]}),
+                    OpenApiExample("BadSchedule", value={"schedule": ["This reservation has no schedule to update."]}),
+                ]
+            ),
+            401: OpenApiResponse(
+                response=ErrorResponseSerializer,
+                description="Not authenticated.",
+                examples=[OpenApiExample("Unauthorized", value={"detail": "Authentication credentials were not provided."})]
+            ),
+            403: OpenApiResponse(
+                response=ErrorResponseSerializer,
+                description="Not owner.",
+                examples=[OpenApiExample("Forbidden", value={"error": "You are not authorized to update this reservation."})]
+            ),
+            404: OpenApiResponse(
+                response=ErrorResponseSerializer,
+                description="Reservation not found.",
+                examples=[OpenApiExample("NotFound", value={"error": "Reservation with this ID does not exist."})]
+            ),
+            409: OpenApiResponse(
+                response=ErrorResponseSerializer,
+                description="Schedule time conflict.",
+                examples=[OpenApiExample("Conflict", value={"error": "This time conflicts with another schedule on the same date."})]
+            ),
+            500: OpenApiResponse(
+                response=ErrorResponseSerializer,
+                description="Server error.",
+                examples=[OpenApiExample("ServerError", value={"error": "An unexpected error occurred."})]
+            ),
+        }
+    )
+    def put(self, request, reservation_id: int):
+        user = request.user
+        student = getattr(user, 'student_profile', None)
+        staff = getattr(user, 'staff', None)
+
+        reservation = (
+            Reservation.objects
+            .select_related('schedule', 'schedule__start_hour_code', 'schedule__end_hour_code',
+                            'space', 'student__user', 'staff')
+            .filter(id=reservation_id)
+            .filter(Q(student=student) | Q(staff=staff))
+            .first()
+        )
+        if reservation is None:
+            return Response({"error": "Reservation with this ID does not exist."},
+                            status=status.HTTP_404_NOT_FOUND)
+
+        if reservation.status != 'under_review':
+            return Response({"error": "Reservation is not editable."},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        serializer = ReservationUpdateSerializer(instance=reservation, data=request.data)
+        try:
+            serializer.is_valid(raise_exception=True)
+            serializer.save()
+        except DjangoValidationError:
+            return Response({"error": "This time conflicts with another schedule on the same date."},
+                            status=status.HTTP_409_CONFLICT)
+        except Exception:
+            return Response({"error": "An unexpected error occurred."},
+                            status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+        return Response({"message": "Reservation updated successfully."}, status=status.HTTP_200_OK)
+    
+    
 @extend_schema(tags=['event'])
 class MyEventsListView(APIView):
     permission_classes = [IsAuthenticated]
