@@ -175,37 +175,36 @@ class Event(models.Model):
         ('class', 'Class'),
         ('gathering', 'Gathering'),
     )
-
     ORGANIZER_TYPES = (
         ('student', 'Student'),
         ('staff', 'Staff'),
     )
+
     title = models.CharField(max_length=200)
     event_type = models.CharField(max_length=20, choices=EVENT_TYPES)
     space = models.ForeignKey(Space, on_delete=models.SET_NULL, null=True, blank=True)
     poster = models.ImageField(upload_to="event_posters/", null=True, blank=True)
-    organizer = models.CharField(max_length=20, choices=ORGANIZER_TYPES)
+
+    organizer = models.CharField(max_length=20, choices=ORGANIZER_TYPES, default="staff") 
     student_organizer = models.ForeignKey(Student, on_delete=models.SET_NULL, null=True, blank=True)
-    staff_organizer = models.ForeignKey(Staff, on_delete=models.SET_NULL, null=True, blank=True)
+    staff_organizer   = models.ForeignKey(Staff,   on_delete=models.SET_NULL, null=True, blank=True)
+
+    contact_info = models.CharField(max_length=200, null=True, blank=True)
+    registration_link = models.URLField(null=True, blank=True)
+
     description = models.CharField(max_length=500, default='no description')
     schedule = models.OneToOneField(Schedule, on_delete=models.SET_NULL, null=True, blank=True, related_name='event_instance')
 
-    def __str__(self):
-        organizer = (
-            self.student_organizer.first_name if self.student_organizer else
-            self.staff_organizer.first_name if self.staff_organizer else "unknown"
-        )
-        if self.schedule:
-            return f"{self.title} (organizer: {organizer}, {self.schedule.date})"
-        return f"{self.title} (organizer: {organizer}, no schedule)"
+    def clean(self):
+        if self.organizer == 'student':
+            if not self.student_organizer or self.staff_organizer:
+                raise ValidationError("When organizer is 'student', set student_organizer and clear staff_organizer.")
+        elif self.organizer == 'staff':
+            if not self.staff_organizer or self.student_organizer:
+                raise ValidationError("When organizer is 'staff', set staff_organizer and clear student_organizer.")
 
     def save(self, *args, **kwargs):
-        if self.organizer == 'student' and not self.student_organizer:
-            raise ValueError("For the organizer, you must select a student.")
-        if self.organizer == 'staff' and not self.staff_organizer:
-            raise ValueError("For the organizer, you must select a staff.")
-        if self.student_organizer and self.staff_organizer:
-            raise ValueError("You can only choose one organizer (student or staff).")
+        self.clean()
         super().save(*args, **kwargs)
 
 

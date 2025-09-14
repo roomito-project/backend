@@ -169,60 +169,123 @@ class StaffSerializer(serializers.ModelSerializer):
         fields = ['first_name', 'last_name', 'personnel_code', 'email']
 
 
+class OrganizerOutSerializer(serializers.Serializer):
+    type = serializers.ChoiceField(choices=['student', 'staff'])
+    id = serializers.IntegerField()
+    first_name = serializers.CharField()
+    last_name = serializers.CharField()
+    email = serializers.EmailField(allow_null=True, required=False)
+
+
+def _parse_time_range(time_range_str: str, pick: str = "start"):
+    if not time_range_str or "-" not in time_range_str:
+        return None
+    part = time_range_str.split("-")[0 if pick == "start" else -1]
+    return f"{part}:00" if len(part) == 5 else part
+
+
 class EventSerializer(serializers.ModelSerializer):
     space = SpaceSerializer(read_only=True)
-    student_organizer = StudentSerializer(read_only=True)
-    staff_organizer = StaffSerializer(read_only=True)
+    organizer = serializers.SerializerMethodField()  
     poster = serializers.ImageField(read_only=True, allow_null=True)
     date = serializers.DateField(source='schedule.date', read_only=True)
     start_time = serializers.SerializerMethodField()
-    end_time = serializers.SerializerMethodField()
+    end_time   = serializers.SerializerMethodField()
 
     class Meta:
         model = Event
         fields = [
             'id', 'title', 'event_type', 'date', 'start_time', 'end_time',
             'space', 'poster', 'organizer',
-            'student_organizer', 'staff_organizer', 'description'
+            'contact_info', 'registration_link',
+            'description',
         ]
         read_only_fields = fields
 
+    def get_organizer(self, obj):
+        if obj.organizer == 'student' and obj.student_organizer and getattr(obj.student_organizer, 'user', None):
+            u = obj.student_organizer.user
+            return {
+                "type": "student",
+                "id": obj.student_organizer.id,
+                "first_name": u.first_name,
+                "last_name": u.last_name,
+                "email": u.email,
+            }
+        if obj.organizer == 'staff' and obj.staff_organizer:
+            s = obj.staff_organizer
+            return {
+                "type": "staff",
+                "id": s.id,
+                "first_name": s.first_name,
+                "last_name": s.last_name,
+                "email": s.email,
+            }
+        return None
+
     def get_start_time(self, obj):
         slot = getattr(getattr(obj, 'schedule', None), 'start_hour_code', None)
-        return slot.time_range.split('-')[0] + ":00" if slot else None
+        return _parse_time_range(getattr(slot, 'time_range', None), 'start')
 
     def get_end_time(self, obj):
         slot = getattr(getattr(obj, 'schedule', None), 'end_hour_code', None)
-        return slot.time_range.split('-')[-1] + ":00" if slot else None
+        return _parse_time_range(getattr(slot, 'time_range', None), 'end')
 
 
 class EventDetailSerializer(serializers.ModelSerializer):
-    organizer_name = serializers.SerializerMethodField()
-    space_name = serializers.CharField(source='space.name', default=None)
+    organizer = serializers.SerializerMethodField()
+    space_name = serializers.CharField(source='space.name', read_only=True)
     poster_url = serializers.SerializerMethodField()
-    date = serializers.DateField(source='schedule.date', default=None)
-    start_time = serializers.TimeField(source='schedule.start_time', default=None)
-    end_time = serializers.TimeField(source='schedule.end_time', default=None)
+    date = serializers.DateField(source='schedule.date', read_only=True)
+    start_time = serializers.SerializerMethodField()
+    end_time   = serializers.SerializerMethodField()
 
     class Meta:
         model = Event
         fields = [
-            'id', 'title', 'event_type', 'date', 'start_time', 'end_time',
-            'space_name', 'poster_url', 'organizer', 'organizer_name', 'description'
+            'id', 'title', 'event_type',
+            'date', 'start_time', 'end_time',
+            'space_name', 'poster_url',
+            'organizer',
+            'contact_info', 'registration_link',  
+            'description',
         ]
+        read_only_fields = fields
 
-    def get_organizer_name(self, obj):
-        if obj.organizer == 'student' and obj.student_organizer:
-            return f"{obj.student_organizer.first_name} {obj.student_organizer.last_name}"
-        elif obj.organizer == 'staff' and obj.staff_organizer:
-            return f"{obj.staff_organizer.first_name} {obj.staff_organizer.last_name}"
-        return "unknown"
+    def get_organizer(self, obj):
+        if obj.organizer == 'student' and obj.student_organizer and getattr(obj.student_organizer, 'user', None):
+            u = obj.student_organizer.user
+            return {
+                "type": "student",
+                "id": obj.student_organizer.id,
+                "first_name": u.first_name,
+                "last_name": u.last_name,
+                "email": u.email,
+            }
+        if obj.organizer == 'staff' and obj.staff_organizer:
+            s = obj.staff_organizer
+            return {
+                "type": "staff",
+                "id": s.id,
+                "first_name": s.first_name,
+                "last_name": s.last_name,
+                "email": s.email,
+            }
+        return None
 
     def get_poster_url(self, obj):
         if obj.poster:
             request = self.context.get('request')
             return request.build_absolute_uri(obj.poster.url) if request else obj.poster.url
         return None
+
+    def get_start_time(self, obj):
+        slot = getattr(getattr(obj, 'schedule', None), 'start_hour_code', None)
+        return _parse_time_range(getattr(slot, 'time_range', None), 'start')
+
+    def get_end_time(self, obj):
+        slot = getattr(getattr(obj, 'schedule', None), 'end_hour_code', None)
+        return _parse_time_range(getattr(slot, 'time_range', None), 'end')
 
 
 class ScheduleAvailabilitySerializer(serializers.Serializer):

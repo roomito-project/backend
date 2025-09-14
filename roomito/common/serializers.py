@@ -132,20 +132,43 @@ class MyEventListSerializer(serializers.ModelSerializer):
 
 
 class EventDetailSerializer(serializers.ModelSerializer):
-    space       = SpaceSerializer(read_only=True)              
+    space       = SpaceSerializer(read_only=True)
     date        = serializers.DateField(source='schedule.date', read_only=True)
     start_time  = serializers.SerializerMethodField()
     end_time    = serializers.SerializerMethodField()
-    organizer_display = serializers.CharField(source='get_organizer_display', read_only=True)
+    organizer   = serializers.SerializerMethodField()
+    contact_info       = serializers.CharField(read_only=True, allow_null=True)
+    registration_link  = serializers.URLField(read_only=True, allow_null=True)
     poster      = serializers.ImageField(read_only=True)
 
     class Meta:
         model = Event
         fields = [
             'id', 'title', 'event_type', 'description',
-            'poster', 'organizer', 'organizer_display',
+            'poster', 'organizer', 'contact_info', 'registration_link', 
             'space', 'date', 'start_time', 'end_time'
         ]
+
+    def get_organizer(self, obj):
+        if obj.organizer == 'student' and obj.student_organizer and getattr(obj.student_organizer, 'user', None):
+            u = obj.student_organizer.user
+            return {
+                "type": "student",
+                "id": obj.student_organizer.id,
+                "first_name": u.first_name,
+                "last_name": u.last_name,
+                "email": u.email,
+            }
+        if obj.organizer == 'staff' and obj.staff_organizer:
+            s = obj.staff_organizer
+            return {
+                "type": "staff",
+                "id": s.id,
+                "first_name": s.first_name,
+                "last_name": s.last_name,
+                "email": s.email,
+            }
+        return None
 
     def _parse_time_range(self, time_range_str, pick='start'):
         if not time_range_str or '-' not in time_range_str:
