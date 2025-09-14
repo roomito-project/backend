@@ -310,13 +310,21 @@ class ScheduleSerializer(serializers.ModelSerializer):
         fields = ['hour_codes', 'date']
 
     def validate(self, data):
-        slots = [hc.code for hc in data['hour_codes']]
-        if len(slots) != len(set(slots)):
+        hour_objs = data['hour_codes']
+        if not hour_objs:
+            raise serializers.ValidationError({"hour_codes": ["At least one hour code is required."]})
+
+        pairs = sorted(((hc.code, hc) for hc in hour_objs), key=lambda x: x[0])
+        codes = [c for c, _ in pairs]
+        hour_objs_sorted = [o for _, o in pairs]
+
+        if len(codes) != len(set(codes)):
             raise serializers.ValidationError({"hour_codes": ["Duplicate hour codes are not allowed."]})
-        if slots != sorted(slots):
-            raise serializers.ValidationError({"hour_codes": ["Hour codes must be in ascending order."]})
-        if max(slots) - min(slots) + 1 != len(slots):
+
+        if len(codes) > 1 and (max(codes) - min(codes) + 1) != len(codes):
             raise serializers.ValidationError({"hour_codes": ["Hour codes must be consecutive."]})
+
+        data['hour_codes'] = hour_objs_sorted
         return data
 
     def to_representation(self, instance):
@@ -328,7 +336,7 @@ class ScheduleSerializer(serializers.ModelSerializer):
         }
 
     def create(self, validated_data):
-        hour_codes = validated_data.pop('hour_codes')
+        hour_codes = validated_data.pop('hour_codes')  
         space = self.context.get('space')
         if not space:
             raise serializers.ValidationError({"space": ["Space context is missing."]})
@@ -336,13 +344,12 @@ class ScheduleSerializer(serializers.ModelSerializer):
         start_hour_code = min(hour_codes, key=lambda x: x.code)
         end_hour_code   = max(hour_codes, key=lambda x: x.code)
 
-        schedule = Schedule.objects.create(
+        return Schedule.objects.create(
             space=space,
             start_hour_code=start_hour_code,
             end_hour_code=end_hour_code,
             date=validated_data['date']
         )
-        return schedule
 
 
 class ReservationCreateSerializer(serializers.ModelSerializer):

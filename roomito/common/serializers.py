@@ -199,12 +199,17 @@ class ScheduleUpdateSerializer(serializers.Serializer):
                 raise serializers.ValidationError({"hour_codes": ["At least one hour code is required."]})
 
             codes = [hc.code for hc in hour_objs]
+
+            sorted_pairs = sorted(zip(codes, hour_objs), key=lambda x: x[0])
+            codes, hour_objs = zip(*sorted_pairs)  
+            data['hour_codes'] = list(hour_objs)
+
             if len(codes) != len(set(codes)):
                 raise serializers.ValidationError({"hour_codes": ["Duplicate hour codes are not allowed."]})
-            if codes != sorted(codes):
-                raise serializers.ValidationError({"hour_codes": ["Hour codes must be in ascending order."]})
+
             if (max(codes) - min(codes) + 1) != len(codes):
                 raise serializers.ValidationError({"hour_codes": ["Hour codes must be consecutive."]})
+
         return data
 
 
@@ -258,10 +263,11 @@ class ReservationUpdateSerializer(serializers.ModelSerializer):
 
 class MyEventUpdateSerializer(serializers.ModelSerializer):
     poster = serializers.ImageField(required=False, allow_null=True)
+    removeImage = serializers.BooleanField(required=False, write_only=True)
 
     class Meta:
         model = Event
-        fields = ['title', 'poster', 'contact_info', 'registration_link', 'description']
+        fields = ['title', 'poster', 'contact_info', 'registration_link', 'description', 'removeImage']
         extra_kwargs = {
             'title': {'required': False, 'max_length': 200},
             'contact_info': {'required': False, 'allow_blank': True, 'max_length': 200},

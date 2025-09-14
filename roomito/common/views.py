@@ -694,10 +694,15 @@ class MyEventDetailView(APIView):
 @extend_schema(tags=['event'])
 class MyEventUpdateView(APIView):
     permission_classes = [IsAuthenticated]
-    parser_classes = [MultiPartParser, FormParser, JSONParser] 
+    parser_classes = [MultiPartParser, FormParser, JSONParser]
     serializer_class = MyEventUpdateSerializer
     lookup_url_kwarg = 'event_id'
-    http_method_names = ['put'] 
+    http_method_names = ['put']
+
+    def _truthy(self, v):
+        if v is None:
+            return False
+        return str(v).strip().lower() in {"true"}
 
     def get_object(self):
         event = get_object_or_404(
@@ -823,14 +828,12 @@ class MyEventUpdateView(APIView):
             ),
             id=event_id,
         )
-
         if event.event_type != 'event':
             return Response(
                 {"error": "Event not found or not editable (not an 'event')."},
                 status=status.HTTP_404_NOT_FOUND
             )
 
-   
         user = request.user
         if event.organizer == 'student':
             owner_user = getattr(getattr(event, 'student_organizer', None), 'user', None)
@@ -843,28 +846,28 @@ class MyEventUpdateView(APIView):
                 status=status.HTTP_403_FORBIDDEN
             )
 
-        allowed_fields = {"title", "contact_info", "registration_link", "description", "poster"}
-        incoming = {}
-
+        allowed_fields = {"title", "contact_info", "registration_link", "description"}
         for f in allowed_fields:
             if f in request.data:
-                incoming[f] = request.data.get(f)
+                setattr(event, f, request.data.get(f))
 
-        if "title" in incoming:
-            event.title = incoming["title"]
-        if "contact_info" in incoming:
-            event.contact_info = incoming["contact_info"]
-        if "registration_link" in incoming:
-            event.registration_link = incoming["registration_link"]
-        if "description" in incoming:
-            event.description = incoming["description"]
-        if "poster" in request.FILES:
-            event.poster = request.FILES["poster"]
+        incoming_file = request.FILES.get('image') or request.FILES.get('poster')
+        remove_flag = self._truthy(request.data.get('removeImage'))
 
         try:
+            if incoming_file:
+                if event.poster:
+                    event.poster.delete(save=False)
+                event.poster = incoming_file
+
+            elif remove_flag:
+                if event.poster:
+                    event.poster.delete(save=False)
+                event.poster = None
+
             event.full_clean()
             event.save()
-        except Exception as e:
+        except Exception:
             return Response({"error": "Invalid payload."}, status=status.HTTP_400_BAD_REQUEST)
 
         data = EventDetailSerializer(event, context={"request": request}).data
