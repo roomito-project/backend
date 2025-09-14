@@ -1,5 +1,6 @@
 from django.urls import path
 from .views import (
+    MyEventUpdateView,
     MyReservationsListView, 
     UnifiedLoginView, 
     MyReservationDetailView, 
@@ -17,4 +18,5 @@ urlpatterns = [
     path("myevents/", MyEventsListView.as_view(), name="my-events"),
     path("myevents/<int:event_id>/", MyEventDetailView.as_view(), name="my-event"),
     path("myreservations/<int:reservation_id>/update", MyReservationUpdateView.as_view(), name="my-reservation-update"),
+    path("myevents/<int:event_id>/update/", MyEventUpdateView.as_view(), name="my-event-update"),
 ]

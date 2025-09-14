@@ -7,7 +7,7 @@ from django.core.cache import cache
 from staffs.models import Staff
 from students.models import Student
 from drf_spectacular.utils import extend_schema, OpenApiExample, OpenApiResponse, OpenApiParameter
-from .serializers import EventDetailSerializer, MyEventListSerializer, MyReservationDetailSerializer, ReservationUpdateSerializer, SuccessResponseSerializer, UnifiedLoginSerializer, TokenResponseSerializer, ErrorResponseSerializer
+from .serializers import EventDetailSerializer, MyEventListSerializer, MyEventUpdateSerializer, MyReservationDetailSerializer, ReservationUpdateSerializer, SuccessResponseSerializer, UnifiedLoginSerializer, TokenResponseSerializer, ErrorResponseSerializer
 from rest_framework.permissions import IsAuthenticated
 from .serializers import MyReservationListSerializer
 from space_managers.models import Reservation, Event
@@ -15,6 +15,8 @@ from django.shortcuts import get_object_or_404
 from django.db import transaction
 from django.db.models import Q
 from django.core.exceptions import ValidationError as DjangoValidationError
+from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
+from rest_framework.exceptions import ValidationError as DRFValidationError
 
 
 @extend_schema(tags=['auth'])
@@ -426,16 +428,16 @@ class MyReservationUpdateView(APIView):
     permission_classes = [IsAuthenticated]
 
     @extend_schema(
-        description="Update a reservation created by the authenticated user. Allowed only while status is 'under_review'.",
+        description="Update a reservation created by the authenticated user. Allowed only while status is 'under_review'. Space is NOT editable.",
         parameters=[
-                    OpenApiParameter(
-                        name="reservation_id",
-                        required=True,
-                        type=int,
-                        location=OpenApiParameter.PATH,
-                        description="ID of the reservation to edit"
-                    ),
-                ],
+            OpenApiParameter(
+                name="reservation_id",
+                required=True,
+                type=int,
+                location=OpenApiParameter.PATH,
+                description="ID of the reservation to edit"
+            ),
+        ],
         request=ReservationUpdateSerializer,
         responses={
             200: OpenApiResponse(
@@ -450,6 +452,7 @@ class MyReservationUpdateView(APIView):
                     OpenApiExample("NotEditable", value={"error": "Reservation is not editable."}),
                     OpenApiExample("BadPhone", value={"phone_number": ["Phone number must be exactly 11 digits."]}),
                     OpenApiExample("BadSchedule", value={"schedule": ["This reservation has no schedule to update."]}),
+                    OpenApiExample("BadHourCodes", value={"hour_codes": ["Hour codes must be consecutive."]}),
                 ]
             ),
             401: OpenApiResponse(
@@ -504,6 +507,8 @@ class MyReservationUpdateView(APIView):
         try:
             serializer.is_valid(raise_exception=True)
             serializer.save()
+        except DRFValidationError as e:
+            return Response(e.detail, status=status.HTTP_400_BAD_REQUEST)
         except DjangoValidationError:
             return Response({"error": "This time conflicts with another schedule on the same date."},
                             status=status.HTTP_409_CONFLICT)
@@ -513,7 +518,7 @@ class MyReservationUpdateView(APIView):
 
         return Response({"message": "Reservation updated successfully."}, status=status.HTTP_200_OK)
     
-    
+        
 @extend_schema(tags=['event'])
 class MyEventsListView(APIView):
     permission_classes = [IsAuthenticated]
@@ -684,3 +689,183 @@ class MyEventDetailView(APIView):
                             status=status.HTTP_404_NOT_FOUND)
 
         return Response(EventDetailSerializer(event).data, status=status.HTTP_200_OK)
+
+
+@extend_schema(tags=['event'])
+class MyEventUpdateView(APIView):
+    permission_classes = [IsAuthenticated]
+    parser_classes = [MultiPartParser, FormParser, JSONParser] 
+    serializer_class = MyEventUpdateSerializer
+    lookup_url_kwarg = 'event_id'
+    http_method_names = ['put'] 
+
+    def get_object(self):
+        event = get_object_or_404(
+            Event.objects.select_related(
+                'student_organizer__user', 'staff_organizer__user'
+            ).filter(event_type='event'),
+            id=self.kwargs[self.lookup_url_kwarg]
+        )
+
+        u = self.request.user
+        is_owner = False
+        if event.organizer == 'student' and getattr(event, 'student_organizer', None):
+            is_owner = getattr(event.student_organizer, 'user', None) == u
+        elif event.organizer == 'staff' and getattr(event, 'staff_organizer', None):
+            is_owner = getattr(event.staff_organizer, 'user', None) == u
+
+        if not is_owner:
+            from rest_framework.exceptions import PermissionDenied
+            raise PermissionDenied("You are not allowed to edit this event.")
+
+        return event
+
+    @extend_schema(
+        tags=['event'],
+        description="Update an event created by the authenticated user.",
+        parameters=[OpenApiParameter(name='event_id', required=True, type=int, location=OpenApiParameter.PATH)],
+        request=MyEventUpdateSerializer,
+        responses={
+            200: OpenApiResponse(
+                response=EventDetailSerializer,
+                description="Event updated successfully.",
+                examples=[OpenApiExample(
+                    name="Success",
+                    value={
+                        "id": 12,
+                        "title": "کارگاه Django - ویرایش شده",
+                        "event_type": "event",
+                        "date": "2025-08-25",
+                        "start_time": "09:00:00",
+                        "end_time": "11:00:00",
+                        "space_name": "تالار برآنی",
+                        "poster_url": None,
+                        "organizer": {"type": "staff", "id": 3, "first_name": "Ali", "last_name": "Ahmadi", "email": "ali@example.com"},
+                        "contact_info": "0913xxxxxxx",
+                        "registration_link": "https://example.com/register",
+                        "description": "متن جدید"
+                    },
+                    response_only=True
+                )]
+            ),
+            400: OpenApiResponse(
+            response=ErrorResponseSerializer,
+            description="Validation error",
+            examples=[
+                OpenApiExample(name="BadURL", value={"registration_link": ["Enter a valid URL."]}, response_only=True),
+                OpenApiExample(name="EmptyTitle", value={"title": ["This field may not be blank."]}, response_only=True),
+                OpenApiExample(name="InvalidImage", value={"poster": ["Invalid image."]}, response_only=True),
+            ]
+        ),
+        401: OpenApiResponse(
+            response=ErrorResponseSerializer,
+            description="Unauthorized",
+            examples=[OpenApiExample(
+                name="Unauthorized",
+                value={"detail": "Authentication credentials were not provided."},
+                response_only=True
+            )]
+        ),
+        403: OpenApiResponse(
+            response=ErrorResponseSerializer,
+            description="Forbidden (not owner)",
+            examples=[OpenApiExample(
+                name="Forbidden",
+                value={"error": "You are not allowed to edit this event."},
+                response_only=True
+            )]
+        ),
+        404: OpenApiResponse(
+            response=ErrorResponseSerializer,
+            description="Not found or not an event",
+            examples=[OpenApiExample(
+                name="NotFound",
+                value={"error": "Event not found or not editable (not an 'event')."},
+                response_only=True
+            )]
+        ),
+        405: OpenApiResponse(
+            response=ErrorResponseSerializer,
+            description="Method not allowed",
+            examples=[OpenApiExample(
+                name="MethodNotAllowed",
+                value={"detail": "Method \"POST\" not allowed."},
+                response_only=True
+            )]
+        ),
+        415: OpenApiResponse(
+            response=ErrorResponseSerializer,
+            description="Unsupported media type",
+            examples=[OpenApiExample(
+                name="UnsupportedMediaType",
+                value={"detail": "Unsupported media type \"application/json\" in request."},
+                response_only=True
+            )]
+        ),
+        500: OpenApiResponse(
+            response=ErrorResponseSerializer,
+            description="Internal server error",
+            examples=[OpenApiExample(
+                name="ServerError",
+                value={"error": "An unexpected server error occurred."},
+                response_only=True
+            )]
+        ),
+        }
+    )
+    def put(self, request, event_id):
+        event = get_object_or_404(
+            Event.objects.select_related(
+                "space",
+                "schedule", "schedule__start_hour_code", "schedule__end_hour_code",
+                "student_organizer__user",
+                "staff_organizer",
+            ),
+            id=event_id,
+        )
+
+        if event.event_type != 'event':
+            return Response(
+                {"error": "Event not found or not editable (not an 'event')."},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+   
+        user = request.user
+        if event.organizer == 'student':
+            owner_user = getattr(getattr(event, 'student_organizer', None), 'user', None)
+        else:  
+            owner_user = getattr(getattr(event, 'staff_organizer', None), 'user', None)
+
+        if owner_user is None or owner_user != user:
+            return Response(
+                {"error": "You are not allowed to edit this event."},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        allowed_fields = {"title", "contact_info", "registration_link", "description", "poster"}
+        incoming = {}
+
+        for f in allowed_fields:
+            if f in request.data:
+                incoming[f] = request.data.get(f)
+
+        if "title" in incoming:
+            event.title = incoming["title"]
+        if "contact_info" in incoming:
+            event.contact_info = incoming["contact_info"]
+        if "registration_link" in incoming:
+            event.registration_link = incoming["registration_link"]
+        if "description" in incoming:
+            event.description = incoming["description"]
+        if "poster" in request.FILES:
+            event.poster = request.FILES["poster"]
+
+        try:
+            event.full_clean()
+            event.save()
+        except Exception as e:
+            return Response({"error": "Invalid payload."}, status=status.HTTP_400_BAD_REQUEST)
+
+        data = EventDetailSerializer(event, context={"request": request}).data
+        return Response(data, status=status.HTTP_200_OK)

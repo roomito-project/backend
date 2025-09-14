@@ -194,7 +194,11 @@ class ScheduleUpdateSerializer(serializers.Serializer):
 
     def validate(self, data):
         if 'hour_codes' in data:
-            codes = [hc.code for hc in data['hour_codes']]
+            hour_objs = data['hour_codes']
+            if not hour_objs:
+                raise serializers.ValidationError({"hour_codes": ["At least one hour code is required."]})
+
+            codes = [hc.code for hc in hour_objs]
             if len(codes) != len(set(codes)):
                 raise serializers.ValidationError({"hour_codes": ["Duplicate hour codes are not allowed."]})
             if codes != sorted(codes):
@@ -207,13 +211,12 @@ class ScheduleUpdateSerializer(serializers.Serializer):
 class ReservationUpdateSerializer(serializers.ModelSerializer):
     phone_number = serializers.CharField(required=False, allow_blank=True, min_length=11, max_length=11)
     schedule = ScheduleUpdateSerializer(required=False)
-    space_name = serializers.CharField(write_only=True, required=False)
- 
+
     class Meta:
         model = Reservation
         fields = [
             'reservation_type', 'phone_number', 'description',
-            'space_name', 'hosting_association', 'hosting_organizations',
+            'hosting_association', 'hosting_organizations',
             'responsible_organizer', 'position', 'schedule',
         ]
 
@@ -222,18 +225,7 @@ class ReservationUpdateSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("Phone number must be exactly 11 digits.")
         return v
 
-    def validate_space_name(self, value):
-        try:
-            space = Space.objects.get(name=value)
-        except Space.DoesNotExist:
-            raise serializers.ValidationError(f"Space with name '{value}' does not exist.")
-        return space
-    
     def update(self, instance: Reservation, validated_data):
-        space = validated_data.pop("space_name", None)
-        if space:
-            instance.space = space
-
         for f in ('reservation_type', 'phone_number', 'description',
                   'hosting_association', 'hosting_organizations',
                   'responsible_organizer', 'position'):
@@ -250,17 +242,29 @@ class ReservationUpdateSerializer(serializers.ModelSerializer):
                 sched.date = sched_data['date']
 
             if 'hour_codes' in sched_data:
-                hour_objs = sched_data['hour_codes']
+                hour_objs = sched_data['hour_codes'] 
                 start_obj = min(hour_objs, key=lambda x: x.code)
                 end_obj   = max(hour_objs, key=lambda x: x.code)
                 sched.start_hour_code = start_obj
                 sched.end_hour_code   = end_obj
 
-            try:
-                sched.full_clean()
-                sched.save()
-            except DjangoValidationError as e:
-                raise e
+            sched.full_clean()
+            sched.save()
 
         instance.save()
         return instance
+
+
+
+class MyEventUpdateSerializer(serializers.ModelSerializer):
+    poster = serializers.ImageField(required=False, allow_null=True)
+
+    class Meta:
+        model = Event
+        fields = ['title', 'poster', 'contact_info', 'registration_link', 'description']
+        extra_kwargs = {
+            'title': {'required': False, 'max_length': 200},
+            'contact_info': {'required': False, 'allow_blank': True, 'max_length': 200},
+            'registration_link': {'required': False, 'allow_null': True},
+            'description': {'required': False, 'allow_blank': True, 'max_length': 500},
+        }
