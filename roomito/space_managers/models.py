@@ -6,6 +6,7 @@ from django.core.exceptions import ValidationError
 from django.utils import timezone
 from django.core.validators import MinValueValidator
 from django.db.models.functions import Lower
+from django.db.models import Q
 
 
 class SpaceManager(models.Model):
@@ -90,10 +91,15 @@ class Schedule(models.Model):
         if self.end_hour_code.code < self.start_hour_code.code:
             raise ValidationError("End hour code must be after start hour code.")
 
-        existing = Schedule.objects.filter(
-            space=self.space,
-            date=self.date
-        ).exclude(pk=self.pk)
+        existing = (
+            Schedule.objects
+            .filter(space=self.space, date=self.date)
+            .exclude(pk=self.pk)
+            .filter(
+                Q(event_instance__isnull=False) |
+                Q(reservation_instance__status='approved')
+            )
+        )
         for schedule in existing:
             if (self.start_hour_code.code <= schedule.end_hour_code.code and
                 self.end_hour_code.code >= schedule.start_hour_code.code):
@@ -101,14 +107,13 @@ class Schedule(models.Model):
 
     @property
     def is_locked(self):
-        existing = Schedule.objects.filter(
-            space=self.space,
-            date=self.date
-        ).exclude(pk=self.pk)
-        for schedule in existing:
-            if (self.start_hour_code.code <= schedule.end_hour_code.code and
-                self.end_hour_code.code >= schedule.start_hour_code.code):
+        try:
+            if getattr(self, 'reservation_instance', None) and self.reservation_instance.status == 'approved':
                 return True
+        except Exception:
+            pass
+        if getattr(self, 'event_instance', None):
+            return True
         return False
 
     def save(self, *args, **kwargs):

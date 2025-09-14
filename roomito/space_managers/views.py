@@ -12,6 +12,8 @@ from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 from drf_spectacular.types import OpenApiTypes
 from django.utils import timezone
 from django.db import transaction
+from django.db.models import Q
+
 from .serializers import (
     ErrorResponseSerializer,
     ManagerSpaceDetailSerializer,
@@ -1651,6 +1653,7 @@ class ScheduleAvailabilityView(APIView):
     def get(self, request):
         date_str = request.query_params.get('date')
         space_id = request.query_params.get('space_id')
+        exclude_res_id = request.query_params.get('exclude_reservation_id')
 
         if not date_str or not space_id:
             return Response({"error": "Date and space ID are required."}, status=status.HTTP_400_BAD_REQUEST)
@@ -1663,27 +1666,38 @@ class ScheduleAvailabilityView(APIView):
         except (ValueError, TypeError):
             return Response({"error": "Date must be in YYYY-MM-DD format."}, status=status.HTTP_400_BAD_REQUEST)
 
-        try:
-            space = get_object_or_404(Space, id=space_id)
-        except Exception:
+        space = Space.objects.filter(id=space_id).first()
+        if not space:
             return Response({"error": f"Space with ID {space_id} not found."}, status=status.HTTP_404_NOT_FOUND)
 
-        reserved_schedules = Schedule.objects.filter(space=space, date=date).values_list('start_hour_code__code', 'end_hour_code__code')
+        qs = (
+            Schedule.objects
+            .filter(space=space, date=date)
+            .filter(Q(event_instance__isnull=False) | Q(reservation_instance__status='approved'))
+            .select_related('start_hour_code', 'end_hour_code')
+        )
 
-        hours = []
-        hour_slots = HourSlot.objects.all()  
-        for slot in hour_slots:
-            is_locked = any(
-                schedule[0] <= slot.code <= schedule[1]
-                for schedule in reserved_schedules
-            )
-            hours.append({
-                "hour_code": slot.code,
-                "time_range": slot.time_range,
-                "is_locked": is_locked
-            })
+        if exclude_res_id:
+            try:
+                exclude_res_id = int(exclude_res_id)
+                qs = qs.exclude(reservation_instance__id=exclude_res_id)
+            except (TypeError, ValueError):
+                pass  
 
-        serializer = ScheduleAvailabilitySerializer(hours, many=True)
+        locked_codes = set()
+        for sch in qs:
+            start = sch.start_hour_code.code
+            end = sch.end_hour_code.code
+            locked_codes.update(range(start, end + 1))
+
+        hour_slots = HourSlot.objects.all() 
+        payload = [{
+            "hour_code": slot.code,
+            "time_range": slot.time_range,
+            "is_locked": (slot.code in locked_codes),
+        } for slot in hour_slots]
+
+        serializer = ScheduleAvailabilitySerializer(payload, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
     
     
