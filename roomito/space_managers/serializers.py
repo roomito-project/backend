@@ -234,7 +234,7 @@ class EventSerializer(serializers.ModelSerializer):
 
 class EventDetailSerializer(serializers.ModelSerializer):
     organizer = serializers.SerializerMethodField()
-    space_name = serializers.CharField(source='space.name', read_only=True)
+    space = SpaceSerializer(read_only=True)
     poster_url = serializers.SerializerMethodField()
     date = serializers.DateField(source='schedule.date', read_only=True)
     start_time = serializers.SerializerMethodField()
@@ -245,7 +245,7 @@ class EventDetailSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'title', 'event_type',
             'date', 'start_time', 'end_time',
-            'space_name', 'poster_url',
+            'space', 'poster_url',
             'organizer',
             'contact_info', 'registration_link',  
             'description',
@@ -675,7 +675,7 @@ class SpaceUpdateSerializer(serializers.ModelSerializer):
 
 
 class ReservationDetailSerializer(serializers.ModelSerializer):
-    space_name = serializers.CharField(source='space.name', read_only=True)
+    space = SpaceSerializer(read_only=True)
     schedule_date = serializers.DateField(source='schedule.date', read_only=True)
     start_time = serializers.SerializerMethodField()
     end_time   = serializers.SerializerMethodField()
@@ -689,7 +689,7 @@ class ReservationDetailSerializer(serializers.ModelSerializer):
             'id', 'reservation_type', 'reservee_type',
             'reservee_name', 'phone_number', 'description',
             'status_display', 'manager_comment',
-            'space_name', 'schedule_date', 'start_time', 'end_time',
+            'space', 'schedule_date', 'start_time', 'end_time',
             'hosting_association', 'hosting_organizations',
             'responsible_organizer', 'position'
         ]
