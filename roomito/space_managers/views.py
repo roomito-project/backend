@@ -1560,10 +1560,10 @@ class ManagerSpaceUpdateView(APIView):
             updated_space = serializer.save()
         except Exception as e:
             return Response(e.detail, status=status.HTTP_400_BAD_REQUEST)
-        except Exception as e:
+        except Exception:
             return Response({"error": "An unexpected error occurred."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-        return Response(SpaceSerializer(updated_space).data, status=status.HTTP_200_OK)
+        return Response(SpaceSerializer(updated_space, context={"request": request}).data, status=status.HTTP_200_OK)
         
 
 @extend_schema(tags=['reservation'])

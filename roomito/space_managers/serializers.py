@@ -613,33 +613,40 @@ class SpaceCreateSerializer(serializers.ModelSerializer):
 
         return space
 
+from django.db import transaction
+from django.utils.datastructures import MultiValueDict
+from rest_framework import serializers
+from .models import Space, SpaceFeature, SpaceImage
 
 class SpaceUpdateSerializer(serializers.ModelSerializer):
-    space_type = serializers.ChoiceField(choices=Space.SPACE_TYPES, required=False)
-    name = serializers.CharField(max_length=100, required=False)
-    address = serializers.CharField(required=False)
-    capacity = serializers.IntegerField(validators=[MinValueValidator(1)], required=False)
+    space_type   = serializers.ChoiceField(choices=Space.SPACE_TYPES, required=False)
+    name         = serializers.CharField(max_length=100, required=False)
+    address      = serializers.CharField(required=False)
+    capacity     = serializers.IntegerField(validators=[MinValueValidator(1)], required=False)
     phone_number = serializers.CharField(max_length=11, required=False, allow_null=True, allow_blank=True)
-    description = serializers.CharField(required=False, allow_blank=True)
+    description  = serializers.CharField(required=False, allow_blank=True)
 
-    features = serializers.PrimaryKeyRelatedField(
-        queryset=SpaceFeature.objects.all(),
-        many=True,
-        required=False
+    keep_image_ids = serializers.ListField(
+        child=serializers.IntegerField(min_value=1),
+        required=False,
+        help_text="IDs of existing images to keep; if omitted, all old images will be removed."
     )
+
     images = serializers.ListField(
         child=serializers.ImageField(),
-        required=False  
+        required=False 
     )
 
     class Meta:
         model = Space
         fields = ["space_type", "name", "address", "capacity", "phone_number",
-                  "description", "features", "images"]
+                  "description", "features", "images", "keep_image_ids"]
 
     def to_internal_value(self, data):
-        if isinstance(data, (MultiValueDict,)):
+
+        if isinstance(data, MultiValueDict):
             normalized = {}
+
             for key in ["space_type", "name", "address", "capacity", "phone_number", "description"]:
                 if key in data:
                     normalized[key] = data.get(key)
@@ -650,32 +657,68 @@ class SpaceUpdateSerializer(serializers.ModelSerializer):
                     feats = [x.strip() for x in feats[0].split(',') if x.strip()]
                 normalized["features"] = feats
 
-            normalized["images"] = data.getlist("images")
+            if "keep_image_ids" in data:
+                ids_raw = data.getlist("keep_image_ids")
+                if len(ids_raw) == 1 and isinstance(ids_raw[0], str) and ',' in ids_raw[0]:
+                    ids = [s.strip() for s in ids_raw[0].split(',') if s.strip()]
+                else:
+                    ids = ids_raw
+                try:
+                    normalized["keep_image_ids"] = [int(i) for i in ids]
+                except ValueError:
+                    raise serializers.ValidationError({"keep_image_ids": ["IDs must be integers."]})
+
+            normalized["images"] = [f for f in data.getlist("images") if f]
 
             return super().to_internal_value(normalized)
 
-        if isinstance(data, dict) and "features" in data and isinstance(data["features"], str):
-            feats = [f.strip() for f in data["features"].split(",") if f.strip()]
-            data = {**data, "features": feats}
+        if isinstance(data, dict):
+            d = dict(data)
+            if "features" in d and isinstance(d["features"], str):
+                d["features"] = [f.strip() for f in d["features"].split(",") if f.strip()]
+            if "keep_image_ids" in d and isinstance(d["keep_image_ids"], str):
+                d["keep_image_ids"] = [int(x) for x in d["keep_image_ids"].split(",") if x.strip()]
+            return super().to_internal_value(d)
 
         return super().to_internal_value(data)
 
-    def update(self, instance, validated_data):
-        instance.space_type   = validated_data.get("space_type", instance.space_type)
-        instance.name         = validated_data.get("name", instance.name)
-        instance.address      = validated_data.get("address", instance.address)
-        instance.capacity     = validated_data.get("capacity", instance.capacity)
-        instance.phone_number = validated_data.get("phone_number", instance.phone_number)
-        instance.description  = validated_data.get("description", instance.description)
+    @transaction.atomic
+    def update(self, instance: Space, validated_data):
+        for f in ("space_type", "name", "address", "capacity", "phone_number", "description"):
+            if f in validated_data:
+                setattr(instance, f, validated_data[f])
 
         if "features" in validated_data:
             instance.features.set(validated_data["features"])
 
-        if "images" in validated_data:
-            new_images = validated_data["images"] or []
-            instance.images.all().delete()
-            for img in new_images:
-                SpaceImage.objects.create(space=instance, image=img)
+        keep_ids = validated_data.get("keep_image_ids", None)  
+        new_files = validated_data.get("images", [])
+
+        if keep_ids is None:
+            old_images = list(instance.images.all())
+            for img in old_images:
+                if img.image:
+                    img.image.delete(save=False)
+                img.delete()
+        else:
+            keep_set = set(keep_ids)
+            current = list(instance.images.all())
+            for img in current:
+                if img.id not in keep_set:
+                    if img.image:
+                        img.image.delete(save=False)
+                    img.delete()
+
+        existing_name_size = {
+            (si.image.name.split('/')[-1], getattr(si.image, 'size', None))
+            for si in instance.images.all()
+            if si.image
+        }
+        for f in new_files:
+            key = (getattr(f, 'name', None), getattr(f, 'size', None))
+            if key in existing_name_size:
+                continue
+            SpaceImage.objects.create(space=instance, image=f)
 
         instance.save()
         return instance
