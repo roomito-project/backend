@@ -138,7 +138,7 @@ class EventDetailSerializer(serializers.ModelSerializer):
     end_time    = serializers.SerializerMethodField()
     organizer   = serializers.SerializerMethodField()
     contact_info       = serializers.CharField(read_only=True, allow_null=True)
-    registration_link  = serializers.URLField(read_only=True, allow_null=True)
+    registration_link  = serializers.CharField(read_only=True, allow_null=True)
     poster      = serializers.ImageField(read_only=True)
 
     class Meta:

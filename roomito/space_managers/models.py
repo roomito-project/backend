@@ -190,7 +190,7 @@ class Event(models.Model):
     staff_organizer   = models.ForeignKey(Staff,   on_delete=models.SET_NULL, null=True, blank=True)
 
     contact_info = models.CharField(max_length=200, null=True, blank=True)
-    registration_link = models.URLField(null=True, blank=True)
+    registration_link = models.CharField(null=True, blank=True)
 
     description = models.CharField(max_length=500, default='no description')
     schedule = models.OneToOneField(Schedule, on_delete=models.SET_NULL, null=True, blank=True, related_name='event_instance')
