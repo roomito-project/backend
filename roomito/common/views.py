@@ -888,7 +888,7 @@ class GlobalSearchView(APIView):
         "دفتر": ("space", "office"),
 
         "رویداد": ("event", "event"),
-        "کلاس": ("event", "class"),
+        "کلاس درس": ("event", "class"),
         "دورهمی": ("event", "gathering"),
     }
     
@@ -925,13 +925,8 @@ class GlobalSearchView(APIView):
             ),
             400: OpenApiResponse(
                 response=ErrorResponseSerializer,
-                description="Invalid request (e.g., missing/invalid query).",
+                description="Invalid request.",
                 examples=[
-                    OpenApiExample(
-                        name="MissingQuery",
-                        value={"error": "Search query parameter 'search' is required."},
-                        response_only=True,
-                    ),
                     OpenApiExample(
                         name="BadDate", 
                         value={"error": "Invalid date format. Use YYYY-MM-DD."}, 
@@ -995,35 +990,52 @@ class GlobalSearchView(APIView):
                                 status=status.HTTP_400_BAD_REQUEST)
 
         try:
+            if not q:
+                return Response([], status=status.HTTP_200_OK)
+            
             results = []
+            seen = set()  
 
-            space_q = Q(name__icontains=q) | Q(description__icontains=q)
-            spaces_qs = Space.objects.filter(space_q).values("id", "name")
-            results += [{"type": "space", "id": s["id"], "title": s["name"]} for s in spaces_qs]
+            search_spaces = event_date_parsed is None
+
+            if search_spaces:
+                space_q = Q(name__icontains=q) | Q(description__icontains=q)
+                for s in Space.objects.filter(space_q).values("id", "name"):
+                    key = ("space", s["id"])
+                    if key not in seen:
+                        seen.add(key)
+                        results.append({"type": "space", "id": s["id"], "title": s["name"]})
 
             event_q = Q(title__icontains=q) | Q(description__icontains=q)
             if event_date_parsed:
                 event_q &= Q(schedule__date=event_date_parsed)
-
-            events_qs = Event.objects.filter(event_q).values("id", "title")
-            results += [{"type": "event", "id": e["id"], "title": e["title"]} for e in events_qs]
+            for e in Event.objects.filter(event_q).values("id", "title"):
+                key = ("event", e["id"])
+                if key not in seen:
+                    seen.add(key)
+                    results.append({"type": "event", "id": e["id"], "title": e["title"]})
 
             keyword = self.TYPE_KEYWORDS.get(q)
             if keyword:
                 kind, type_val = keyword
-                if kind == "space":
-                    qs = Space.objects.filter(space_type=type_val).values("id", "name")
-                    results += [{"type": "space", "id": s["id"], "title": s["name"]} for s in qs]
-                else:  
+                if kind == "space" and search_spaces:
+                    for s in Space.objects.filter(space_type=type_val).values("id", "name"):
+                        key = ("space", s["id"])
+                        if key not in seen:
+                            seen.add(key)
+                            results.append({"type": "space", "id": s["id"], "title": s["name"]})
+                elif kind == "event":
                     type_q = Q(event_type=type_val)
                     if event_date_parsed:
                         type_q &= Q(schedule__date=event_date_parsed)
-                    qs = Event.objects.filter(type_q).values("id", "title")
-                    results += [{"type": "event", "id": e["id"], "title": e["title"]} for e in qs]
+                    for e in Event.objects.filter(type_q).values("id", "title"):
+                        key = ("event", e["id"])
+                        if key not in seen:
+                            seen.add(key)
+                            results.append({"type": "event", "id": e["id"], "title": e["title"]})
 
             if not results:
-                return Response({"error": "No results found for the given query."},
-                                status=status.HTTP_404_NOT_FOUND)
+                return Response([], status=status.HTTP_200_OK)
 
             q_lower = q.lower()
             results.sort(
