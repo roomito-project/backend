@@ -17,6 +17,9 @@ from django.db.models import Q
 from django.core.exceptions import ValidationError as DjangoValidationError
 from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 from rest_framework.exceptions import ValidationError as DRFValidationError
+from space_managers.models import Space, Event
+from .serializers import SearchResultSerializer
+from drf_spectacular.utils import extend_schema, OpenApiParameter, OpenApiResponse, OpenApiExample, OpenApiTypes
 
 
 @extend_schema(tags=['auth'])
@@ -872,3 +875,131 @@ class MyEventUpdateView(APIView):
 
         data = EventDetailSerializer(event, context={"request": request}).data
         return Response(data, status=status.HTTP_200_OK)
+
+
+class GlobalSearchView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(
+        description="Search spaces and events by a query string.",
+        parameters=[
+            OpenApiParameter(
+                name='search',
+                required=True,
+                type=OpenApiTypes.STR,
+                description="Query string to search in Space.name and Event.title",
+            ),
+        ],
+        responses={
+            200: OpenApiResponse(
+                response=SearchResultSerializer(many=True),
+                description="Search results returned successfully.",
+                examples=[
+                    OpenApiExample(
+                        name="SuccessExample",
+                        value=[
+                            {"type": "space", "id": 1, "title": "تالار برآنی"},
+                            {"type": "event", "id": 7, "title": "کارگاه Django"},
+                        ],
+                        response_only=True,
+                    )
+                ],
+            ),
+            400: OpenApiResponse(
+                response=ErrorResponseSerializer,
+                description="Invalid request (e.g., missing/invalid query).",
+                examples=[
+                    OpenApiExample(
+                        name="MissingQuery",
+                        value={"error": "Search query parameter 'search' is required."},
+                        response_only=True,
+                    ),
+                    OpenApiExample(
+                        name="TooShort",
+                        value={"error": "Search query must be at least 2 characters long."},
+                        response_only=True,
+                    ),
+                ],
+            ),
+            401: OpenApiResponse(
+                response=ErrorResponseSerializer,
+                description="Authentication required.",
+                examples=[
+                    OpenApiExample(
+                        name="Unauthorized",
+                        value={"detail": "Authentication credentials were not provided."},
+                        response_only=True,
+                    )
+                ],
+            ),
+            404: OpenApiResponse(
+                response=ErrorResponseSerializer,
+                description="No matching spaces or events found.",
+                examples=[
+                    OpenApiExample(
+                        name="NotFound",
+                        value={"error": "No results found for the given query."},
+                        response_only=True,
+                    )
+                ],
+            ),
+            500: OpenApiResponse(
+                response=ErrorResponseSerializer,
+                description="Unexpected server error.",
+                examples=[
+                    OpenApiExample(
+                        name="ServerError",
+                        value={"error": "An unexpected error occurred."},
+                        response_only=True,
+                    ),
+                    OpenApiExample(
+                        name="DatabaseError",
+                        value={"error": "Failed to query database."},
+                        response_only=True,
+                    ),
+                ],
+            ),
+        },
+    )
+    def get(self, request):
+        q = (request.query_params.get('search') or '').strip()
+        if not q:
+            return Response(
+                {"error": "Search query parameter 'search' is required."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if len(q) < 2:
+            return Response(
+                {"error": "Search query must be at least 2 characters long."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            spaces_qs = Space.objects.filter(name__icontains=q).values('id', 'name')
+            space_results = [{"type": "space", "id": s["id"], "title": s["name"]} for s in spaces_qs]
+
+            events_qs = Event.objects.filter(title__icontains=q).values('id', 'title')
+            event_results = [{"type": "event", "id": e["id"], "title": e["title"]} for e in events_qs]
+
+            combined = space_results + event_results
+
+            if not combined:
+                return Response(
+                    {"error": "No results found for the given query."},
+                    status=status.HTTP_404_NOT_FOUND,
+                )
+
+            q_lower = q.lower()
+            def sort_key(item):
+                title = (item.get("title") or "").lower()
+                starts = title.startswith(q_lower)
+                return (0 if starts else 1, title)
+
+            combined.sort(key=sort_key)
+            return Response(combined, status=status.HTTP_200_OK)
+
+        except Exception:
+            return Response(
+                {"error": "An unexpected error occurred."},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )

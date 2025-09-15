@@ -274,3 +274,9 @@ class MyEventUpdateSerializer(serializers.ModelSerializer):
             'registration_link': {'required': False, 'allow_null': True},
             'description': {'required': False, 'allow_blank': True, 'max_length': 500},
         }
+
+
+class SearchResultSerializer(serializers.Serializer):
+    type = serializers.ChoiceField(choices=['space', 'event'])
+    id = serializers.IntegerField()
+    title = serializers.CharField()

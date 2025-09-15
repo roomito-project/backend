@@ -7,7 +7,8 @@ from .views import (
     MyReservationDeleteView,
     MyEventDetailView,
     MyEventsListView,
-    MyReservationUpdateView
+    MyReservationUpdateView,
+    GlobalSearchView
 )
 
 urlpatterns = [
@@ -19,4 +20,5 @@ urlpatterns = [
     path("myevents/<int:event_id>/", MyEventDetailView.as_view(), name="my-event"),
     path("myreservations/<int:reservation_id>/update", MyReservationUpdateView.as_view(), name="my-reservation-update"),
     path("myevents/<int:event_id>/update/", MyEventUpdateView.as_view(), name="my-event-update"),
+    path("globalSearch/", GlobalSearchView.as_view(), name="global-search")
 ]
