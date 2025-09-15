@@ -20,6 +20,7 @@ from rest_framework.exceptions import ValidationError as DRFValidationError
 from space_managers.models import Space, Event
 from .serializers import SearchResultSerializer
 from drf_spectacular.utils import extend_schema, OpenApiParameter, OpenApiResponse, OpenApiExample, OpenApiTypes
+from datetime import datetime
 
 
 @extend_schema(tags=['auth'])
@@ -880,14 +881,31 @@ class MyEventUpdateView(APIView):
 class GlobalSearchView(APIView):
     permission_classes = [IsAuthenticated]
 
+    TYPE_KEYWORDS = {
+        "سالن": ("space", "hall"),
+        "کلاس": ("space", "class"),
+        "آزمایشگاه": ("space", "labratory"),
+        "دفتر": ("space", "office"),
+
+        "رویداد": ("event", "event"),
+        "کلاس": ("event", "class"),
+        "دورهمی": ("event", "gathering"),
+    }
+    
     @extend_schema(
-        description="Search spaces and events by a query string.",
+        description="Search spaces and events by a query stringtyp, e keywords and event date.",
         parameters=[
             OpenApiParameter(
                 name='search',
                 required=True,
                 type=OpenApiTypes.STR,
-                description="Query string to search in Space.name and Event.title",
+                description="Query string to search in Space.name and Event.title or type keywords.",
+            ),
+            OpenApiParameter(
+                name='event_date',
+                required=False,
+                type=OpenApiTypes.DATE,
+                description="Exact event date filter (YYYY-MM-DD). Filters Event.schedule.date exactly."
             ),
         ],
         responses={
@@ -915,9 +933,9 @@ class GlobalSearchView(APIView):
                         response_only=True,
                     ),
                     OpenApiExample(
-                        name="TooShort",
-                        value={"error": "Search query must be at least 2 characters long."},
-                        response_only=True,
+                        name="BadDate", 
+                        value={"error": "Invalid date format. Use YYYY-MM-DD."}, 
+                        response_only=True
                     ),
                 ],
             ),
@@ -964,42 +982,59 @@ class GlobalSearchView(APIView):
     def get(self, request):
         q = (request.query_params.get('search') or '').strip()
         if not q:
-            return Response(
-                {"error": "Search query parameter 'search' is required."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-        if len(q) < 2:
-            return Response(
-                {"error": "Search query must be at least 2 characters long."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
+            return Response({"error": "Search query parameter 'search' is required."},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        event_date = request.query_params.get('event_date')
+        event_date_parsed = None
+        if event_date:
+            try:
+                event_date_parsed = datetime.strptime(event_date, "%Y-%m-%d").date()
+            except Exception:
+                return Response({"error": "Invalid date format. Use YYYY-MM-DD."},
+                                status=status.HTTP_400_BAD_REQUEST)
 
         try:
-            spaces_qs = Space.objects.filter(name__icontains=q).values('id', 'name')
-            space_results = [{"type": "space", "id": s["id"], "title": s["name"]} for s in spaces_qs]
+            results = []
 
-            events_qs = Event.objects.filter(title__icontains=q).values('id', 'title')
-            event_results = [{"type": "event", "id": e["id"], "title": e["title"]} for e in events_qs]
+            space_q = Q(name__icontains=q) | Q(description__icontains=q)
+            spaces_qs = Space.objects.filter(space_q).values("id", "name")
+            results += [{"type": "space", "id": s["id"], "title": s["name"]} for s in spaces_qs]
 
-            combined = space_results + event_results
+            event_q = Q(title__icontains=q) | Q(description__icontains=q)
+            if event_date_parsed:
+                event_q &= Q(schedule__date=event_date_parsed)
 
-            if not combined:
-                return Response(
-                    {"error": "No results found for the given query."},
-                    status=status.HTTP_404_NOT_FOUND,
-                )
+            events_qs = Event.objects.filter(event_q).values("id", "title")
+            results += [{"type": "event", "id": e["id"], "title": e["title"]} for e in events_qs]
+
+            keyword = self.TYPE_KEYWORDS.get(q)
+            if keyword:
+                kind, type_val = keyword
+                if kind == "space":
+                    qs = Space.objects.filter(space_type=type_val).values("id", "name")
+                    results += [{"type": "space", "id": s["id"], "title": s["name"]} for s in qs]
+                else:  
+                    type_q = Q(event_type=type_val)
+                    if event_date_parsed:
+                        type_q &= Q(schedule__date=event_date_parsed)
+                    qs = Event.objects.filter(type_q).values("id", "title")
+                    results += [{"type": "event", "id": e["id"], "title": e["title"]} for e in qs]
+
+            if not results:
+                return Response({"error": "No results found for the given query."},
+                                status=status.HTTP_404_NOT_FOUND)
 
             q_lower = q.lower()
-            def sort_key(item):
-                title = (item.get("title") or "").lower()
-                starts = title.startswith(q_lower)
-                return (0 if starts else 1, title)
+            results.sort(
+                key=lambda item: (
+                    0 if (item.get("title") or "").lower().startswith(q_lower) else 1,
+                    (item.get("title") or "").lower()
+                )
+            )
 
-            combined.sort(key=sort_key)
-            return Response(combined, status=status.HTTP_200_OK)
+            return Response(results, status=status.HTTP_200_OK)
 
         except Exception:
-            return Response(
-                {"error": "An unexpected error occurred."},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            )
+            return Response({"error": "An unexpected error occurred."},
+                            status=status.HTTP_500_INTERNAL_SERVER_ERROR)

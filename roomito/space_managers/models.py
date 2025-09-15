@@ -197,7 +197,7 @@ class Event(models.Model):
     contact_info = models.CharField(max_length=200, null=True, blank=True)
     registration_link = models.CharField(null=True, blank=True)
 
-    description = models.CharField(max_length=500, default='no description')
+    description = models.CharField(default='no description')
     schedule = models.OneToOneField(Schedule, on_delete=models.SET_NULL, null=True, blank=True, related_name='event_instance')
 
     def clean(self):
