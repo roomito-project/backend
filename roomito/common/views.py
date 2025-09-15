@@ -893,7 +893,7 @@ class GlobalSearchView(APIView):
     }
     
     @extend_schema(
-        description="Search spaces and events by a query stringtyp, e keywords and event date.",
+        description="Search spaces and events by a query string, type keywords and event date.",
         parameters=[
             OpenApiParameter(
                 name='search',
