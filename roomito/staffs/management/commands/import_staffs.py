@@ -216,7 +216,7 @@ class Command(BaseCommand):
                 user.save()
 
                 Staff.objects.create(
-                    user=user,
+                    user=None,  
                     first_name=first_name,
                     last_name=last_name,
                     email=best_email,

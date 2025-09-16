@@ -93,38 +93,17 @@ class UnifiedLoginView(APIView):
         try:
             if role == 'staff':
                 try:
-                    staff = Staff.objects.get(personnel_code=username)
+                    staff = Staff.objects.select_related('user').get(personnel_code=username)
                 except Staff.DoesNotExist:
+                    return Response({"error": "Invalid credentials."}, status=status.HTTP_401_UNAUTHORIZED)
+
+                if not staff.user_id or not staff.is_registered:
                     return Response({"error": "Invalid credentials."}, status=status.HTTP_401_UNAUTHORIZED)
 
                 user = staff.user
 
-                if user is None:
-                    cached_pw = cache.get(f"staff_password_{staff.email}") or \
-                                cache.get(f"staff_password_{staff.personnel_code}") or \
-                                cache.get(f"staff_tmp_pass_{staff.personnel_code}")
-
-                    if not cached_pw or cached_pw != password:
-                        return Response({"error": "Invalid credentials."}, status=status.HTTP_401_UNAUTHORIZED)
-
-                    user = User.objects.create_user(
-                        username=staff.personnel_code,
-                        password=password,
-                        first_name=staff.first_name,
-                        last_name=staff.last_name,
-                        email=staff.email,
-                    )
-                    staff.user = user
-                    staff.is_registered = True
-                    staff.save(update_fields=['user', 'is_registered'])
-
-                    cache.delete(f"staff_password_{staff.email}")
-                    cache.delete(f"staff_password_{staff.personnel_code}")
-                    cache.delete(f"prof_tmp_pass_{staff.personnel_code}")
-
-                else:
-                    if not user.check_password(password):
-                        return Response({"error": "Invalid credentials."}, status=status.HTTP_401_UNAUTHORIZED)
+                if not user.check_password(password):
+                    return Response({"error": "Invalid credentials."}, status=status.HTTP_401_UNAUTHORIZED)
 
             elif role == 'student':
                 try:
