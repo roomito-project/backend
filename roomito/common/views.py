@@ -522,8 +522,8 @@ class MyReservationUpdateView(APIView):
 
         return Response({"message": "Reservation updated successfully."}, status=status.HTTP_200_OK)
     
-        
-@extend_schema(tags=['event'])
+    
+@extend_schema(tags=['event'])    
 class MyEventsListView(APIView):
     permission_classes = [IsAuthenticated]
 
@@ -533,40 +533,25 @@ class MyEventsListView(APIView):
             200: OpenApiResponse(
                 response=MyEventListSerializer(many=True),
                 description="My events retrieved successfully.",
-                examples=[OpenApiExample(
-                    "Success",
-                    value=[{
-                        "id": 10,
-                        "title": "string",
-                        "event_type": "event",
-                        "description": "string",
-                        "poster": "/media/event_posters/10.jpg",
-                        "space_name": "string",
-                        "date": "2025-09-05",
-                        "start_time": "10:00:00",
-                        "end_time": "12:00:00"
-                    }]
-                ),
+                examples=[
                     OpenApiExample(
-                        "EmptyList",
-                        value={"message": "You have no events."}
-                    )]
+                        "Success",
+                        value=[{
+                            "id": 10,
+                            "title": "string",
+                            "event_type": "event",
+                            "description": "string",
+                            "poster": "/media/event_posters/10.jpg",
+                            "space_name": "string",
+                            "date": "2025-09-05",
+                            "start_time": "10:00:00",
+                            "end_time": "12:00:00"
+                        }]
+                    ),
+                    OpenApiExample("EmptyList", value=[]) 
+                ]
             ),
-            401: OpenApiResponse(
-                response=ErrorResponseSerializer,
-                description="Not authenticated.",
-                examples=[OpenApiExample(
-                    "Unauthorized", value={"detail": "Authentication credentials were not provided."})]),
-            403: OpenApiResponse(
-                response=ErrorResponseSerializer,
-                description="Not a student/staff.",
-                examples=[OpenApiExample(
-                    "Forbidden", value={"error": "Only students or staff can view their events."})]),
-            500: OpenApiResponse(
-                response=ErrorResponseSerializer,
-                description="Server error.",
-                examples=[OpenApiExample(
-                    "ServerError", value={"error": "An unexpected error occurred."})]),
+            401: OpenApiResponse(response=ErrorResponseSerializer, description="Not authenticated."),
         }
     )
     def get(self, request):
@@ -575,13 +560,18 @@ class MyEventsListView(APIView):
             student = getattr(user, 'student_profile', None)
             staff   = getattr(user, 'staff', None)
 
-            events = Event.objects.filter(
-                Q(student_organizer=student) | Q(staff_organizer=staff)
-            ).select_related('space', 'schedule__start_hour_code', 'schedule__end_hour_code')
+            if student is not None:
+                qs = Event.objects.filter(student_organizer=student)
+            else:
+                qs = Event.objects.filter(staff_organizer=staff)
 
-            if not events.exists():
-                return Response({"message": "You have no events."}, status=status.HTTP_200_OK)
-            
+            events = qs.select_related(
+                'space',
+                'schedule',
+                'schedule__start_hour_code',
+                'schedule__end_hour_code'
+            ).order_by('schedule__date', 'schedule__start_hour_code__time_range')
+
             serializer = MyEventListSerializer(events, many=True)
             return Response(serializer.data, status=status.HTTP_200_OK)
 
